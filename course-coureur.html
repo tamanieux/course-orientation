@@ -371,15 +371,7 @@ function renderPlayScreen(){
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-begin">Commencer</button>
       </div>`;
-    document.getElementById('setup-parcours').addEventListener('change', async e=>{
-      selectedParcoursForSetup = e.target.value;
-      currentParcoursId = selectedParcoursForSetup;
-      await loadParcoursData(currentParcoursId);
-    });
-    if(selectedParcoursForSetup && currentParcoursId !== selectedParcoursForSetup){
-      currentParcoursId = selectedParcoursForSetup;
-      loadParcoursData(currentParcoursId);
-    }
+    document.getElementById('setup-parcours').addEventListener('change', e=>{ selectedParcoursForSetup = e.target.value; });
     document.getElementById('player-name').addEventListener('input', e=> playerNameDraft = e.target.value );
     el.querySelectorAll('#mode-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedMode=b.dataset.mode; renderPlayScreen(); }) );
     el.querySelectorAll('#taille-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedTaille=b.dataset.taille; renderPlayScreen(); }) );
