@@ -337,7 +337,21 @@ let playMsg = null, selectedMode = null, selectedTaille = null, selectedParcours
 
 function stopProximityWatch(){ if(proximityWatchId){ navigator.geolocation.clearWatch(proximityWatchId); proximityWatchId=null; } }
 
+function updateTabbarVisibility(){
+  const show = !!activeRun;
+  const mapBtn = document.querySelector('.tab-btn[data-tab="map"]');
+  const rankBtn = document.querySelector('.tab-btn[data-tab="classement"]');
+  if(mapBtn) mapBtn.style.display = show ? '' : 'none';
+  if(rankBtn) rankBtn.style.display = show ? '' : 'none';
+  if(!show){
+    const mapActive = document.getElementById('screen-map').classList.contains('active');
+    const rankActive = document.getElementById('screen-classement').classList.contains('active');
+    if(mapActive || rankActive) switchTab('play');
+  }
+}
+
 function renderPlayScreen(){
+  updateTabbarVisibility();
   stopProximityWatch();
   const el = document.getElementById('screen-play');
 
