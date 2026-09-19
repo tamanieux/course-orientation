@@ -72,6 +72,7 @@
   .info-card{background:#FBF1DD; border:1.5px solid var(--gold); border-radius:10px; padding:14px; margin-bottom:14px;}
   .info-card h3{margin:0 0 6px; font-size:16px; color:#8A6410;}
   .info-card p{margin:0; font-size:14px; line-height:1.5; color:var(--ink);}
+  .info-card img{max-width:100%; border-radius:8px; margin-bottom:10px; display:block;}
 
   .proximity-box{text-align:center; padding:14px; background:var(--paper-dark); border-radius:10px; margin-bottom:16px;}
   .proximity-box .dist{font-family:'Fjalla One'; font-size:34px; color:var(--forest);}
@@ -177,6 +178,7 @@
       <button class="btn btn-primary" id="btn-manual-submit">Valider</button>
     </div>
   </div>
+  <input type="file" accept="image/*" capture="environment" id="rando-photo-input" style="display:none;">
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -210,6 +212,7 @@ let scannerStream = null, scannerRAF = null, scannerCanvas = document.createElem
 let scannerOnResult = null;
 let selectedRankMode = 'velo', selectedRankTaille = 'grand';
 let proximityWatchId = null;
+let capturedPhotoUrl = null;
 
 // ---------- Supabase (shared) ----------
 async function sbGet(key){
@@ -368,7 +371,15 @@ function renderPlayScreen(){
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-begin">Commencer</button>
       </div>`;
-    document.getElementById('setup-parcours').addEventListener('change', e=>{ selectedParcoursForSetup = e.target.value; });
+    document.getElementById('setup-parcours').addEventListener('change', async e=>{
+      selectedParcoursForSetup = e.target.value;
+      currentParcoursId = selectedParcoursForSetup;
+      await loadParcoursData(currentParcoursId);
+    });
+    if(selectedParcoursForSetup && currentParcoursId !== selectedParcoursForSetup){
+      currentParcoursId = selectedParcoursForSetup;
+      loadParcoursData(currentParcoursId);
+    }
     document.getElementById('player-name').addEventListener('input', e=> playerNameDraft = e.target.value );
     el.querySelectorAll('#mode-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedMode=b.dataset.mode; renderPlayScreen(); }) );
     el.querySelectorAll('#taille-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedTaille=b.dataset.taille; renderPlayScreen(); }) );
@@ -468,7 +479,10 @@ function renderPlayScreen(){
       <div class="timer-label">${MODES.find(m=>m.id===activeRun.mode).label} — ${escapeHtml(activeRun.name)} — ${TAILLES.find(t=>t.id===activeRun.taille).label}</div>
       <div class="progress-row"><span>Balises trouvées</span><span class="n">${visitedCount} / ${others.length}</span></div>
       ${activeRun.faults ? `<div class="fault-note">⚠ ${activeRun.faults} faute${activeRun.faults>1?'s':''} enregistrée${activeRun.faults>1?'s':''}</div>` : ''}
-      ${playMsg && playMsg.info ? `<div class="info-card"><h3>${escapeHtml(playMsg.name)}</h3><p>${escapeHtml(playMsg.info)}</p></div>` : (playMsg ? `<div class="msg ${playMsg.ok?'msg-success':'msg-error'}">${playMsg.text}</div>` : '')}
+      ${playMsg && playMsg.info!==undefined ? `<div class="info-card">${playMsg.photo?`<img src="${playMsg.photo}" style="max-width:100%; border-radius:8px; margin-bottom:10px; display:block;">`:''}<h3>${escapeHtml(playMsg.name)}</h3>${playMsg.info?`<p>${escapeHtml(playMsg.info)}</p>`:''}
+        ${capturedPhotoUrl ? `<img src="${capturedPhotoUrl}" style="width:100%; border-radius:8px; margin-top:10px; display:block;">` : ''}
+        <button class="btn btn-outline" id="btn-take-photo" style="margin-top:10px;">📷 ${capturedPhotoUrl?'Reprendre la photo':'Prendre une photo souvenir'}</button>
+      </div>` : (playMsg ? `<div class="msg ${playMsg.ok?'msg-success':'msg-error'}">${playMsg.text}</div>` : '')}
       <div class="balise-list">
         ${others.map(b=>`<div class="balise-item ${activeRun.visited[b.id]?'done':''}"><span class="dot"></span><span class="name">${escapeHtml(b.name)}</span>${activeRun.visited[b.id]?'<span class="tag">✓</span>':''}</div>`).join('')}
       </div>
@@ -478,8 +492,19 @@ function renderPlayScreen(){
     </div>`;
   document.getElementById('btn-scan-any').addEventListener('click', ()=> openScanner(handleScan, 'Scanner une balise'));
   document.getElementById('btn-goto-map').addEventListener('click', ()=> switchTab('map'));
+  const photoBtn = document.getElementById('btn-take-photo');
+  if(photoBtn) photoBtn.addEventListener('click', ()=> document.getElementById('rando-photo-input').click());
   startLiveTimer();
 }
+
+document.getElementById('rando-photo-input').addEventListener('change', e=>{
+  const file = e.target.files && e.target.files[0];
+  if(!file) return;
+  if(capturedPhotoUrl) URL.revokeObjectURL(capturedPhotoUrl);
+  capturedPhotoUrl = URL.createObjectURL(file);
+  e.target.value = '';
+  renderPlayScreen();
+});
 
 function watchProximityTo(target, radius, maxAccuracy, buttonId){
   stopProximityWatch();
@@ -532,8 +557,9 @@ async function handleScan(rawCode){
   activeRun.visited[bal.id] = Date.now();
   persistActiveRun();
   closeScanner();
-  if(activeRun.mode==='rando' && bal.description){
-    playMsg = {ok:true, info: bal.description, name: bal.name};
+  if(capturedPhotoUrl){ URL.revokeObjectURL(capturedPhotoUrl); capturedPhotoUrl = null; }
+  if(activeRun.mode==='rando' && (bal.description || bal.photo)){
+    playMsg = {ok:true, info: bal.description, name: bal.name, photo: bal.photo};
   } else {
     playMsg = {ok:true, text:`"${bal.name}" validée !`};
   }
