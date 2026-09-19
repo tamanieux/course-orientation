@@ -1,1 +1,590 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Organisateur — Balises</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fjalla+One&family=Work+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  :root{
+    --paper:#EFE9D8; --paper-dark:#E3DAC0; --ink:#26261F;
+    --forest:#1E3A2B; --forest-light:#3C6A4C;
+    --trail:#E0611E; --trail-dark:#B14813;
+    --gold:#B08A3E; --success:#3E7A4C; --danger:#A73E32;
+    --line:rgba(38,38,31,.18);
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;background:var(--paper); color:var(--ink); font-family:'Work Sans',sans-serif;}
+  h1,h2,.display{font-family:'Fjalla One',sans-serif; font-weight:400;}
+  #app{max-width:600px; margin:0 auto; padding:18px 18px 60px;}
+  header{border-bottom:3px solid var(--forest); padding-bottom:14px; margin-bottom:18px;}
+  header h1{color:var(--forest); font-size:24px; margin:0 0 4px;}
+  header .sub{font-size:12.5px; color:var(--forest-light);}
+  .badge-warn{display:inline-block; margin-top:8px; background:#F7E5E1; color:var(--danger); font-size:12px;
+    padding:6px 10px; border-radius:6px; font-weight:600;}
+  .card{background:#fff; border:1.5px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px;}
+  .card h2{color:var(--forest); font-size:19px; margin:0 0 10px;}
+  .hint{font-size:12.5px; color:var(--forest-light); margin:0 0 12px; line-height:1.5;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:13px; font-weight:600; margin-bottom:6px; color:var(--forest);}
+  input[type=text],input[type=number],select,textarea{width:100%; padding:11px 12px; font-size:16px; font-family:'Work Sans';
+    border:1.5px solid var(--line); border-radius:8px; background:var(--paper); color:var(--ink);}
+  textarea{resize:vertical; min-height:64px;}
+  .row2{display:flex; gap:8px;}
+  .chk{display:flex; align-items:center; gap:8px; margin-bottom:10px;}
+  .chk input{width:auto;}
+  .chk label{margin:0; font-size:14px; font-weight:500; color:var(--ink);}
+  .chk-row{display:flex; gap:14px; margin-bottom:12px; flex-wrap:wrap;}
+  .btn{display:inline-flex; align-items:center; justify-content:center; gap:8px; width:100%; padding:13px 16px;
+    font-family:'Fjalla One'; font-size:16px; border-radius:9px; border:none; cursor:pointer;}
+  .btn-primary{background:var(--trail); color:#fff;}
+  .btn-secondary{background:var(--forest); color:#fff;}
+  .btn-outline{background:none; border:2px solid var(--forest); color:var(--forest);}
+  .btn-danger-outline{background:none; border:2px solid var(--danger); color:var(--danger);}
+  .btn[disabled]{opacity:.4; pointer-events:none;}
+  .msg{padding:10px 12px; border-radius:8px; font-size:13.5px; margin-bottom:12px;}
+  .msg-error{background:#F7E5E1; color:var(--danger);}
+  .msg-success{background:#E5F1E6; color:var(--success);}
+  .msg-warn{background:#FBF1DD; color:#8A6410;}
+  .gps-status{font-size:13px; background:var(--paper-dark); border-radius:8px; padding:10px 12px; margin-bottom:12px;}
+  #admin-map{height:300px; border-radius:10px; overflow:hidden; border:1.5px solid var(--line); margin-bottom:12px;}
+  .balise-row{display:flex; align-items:center; gap:10px; padding:11px 4px; border-bottom:1px solid var(--line);}
+  .balise-row .info{flex:1;}
+  .balise-row .nm{font-weight:600; font-size:14.5px;}
+  .balise-row .co{font-size:11.5px; color:var(--forest-light); font-variant-numeric:tabular-nums;}
+  .balise-row .desc{font-size:12px; color:var(--forest-light); margin-top:2px; font-style:italic;}
+  .tag{font-size:10px; font-weight:700; padding:2px 7px; border-radius:20px; margin-left:6px;}
+  .tag-start{background:var(--trail); color:#fff;}
+  .tag-fake{background:var(--danger); color:#fff;}
+  .tag-taille{background:var(--gold); color:#fff;}
+  .icon-btn{background:none; border:none; color:var(--danger); cursor:pointer; padding:6px;}
+  table.rank{width:100%; border-collapse:collapse; font-size:13.5px;}
+  table.rank th{text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--forest-light); padding:5px 6px; border-bottom:2px solid var(--forest);}
+  table.rank td{padding:8px 6px; border-bottom:1px solid var(--line);}
+  #print-sheet{display:none;}
+  @media print{
+    body *{visibility:hidden;}
+    #print-sheet, #print-sheet *{visibility:visible;}
+    #print-sheet{display:grid !important; grid-template-columns:repeat(3, 1fr); grid-auto-rows:1fr; gap:4mm; position:absolute; top:0; left:0; width:100%; padding:6mm;}
+    #print-sheet.full-width{display:block !important;}
+    .print-card{page-break-inside:avoid; border:1.5px dashed #999; padding:6px; text-align:center; display:flex; flex-direction:column; align-items:center; justify-content:center;}
+    .print-card img{max-width:100%; height:auto;}
+    .print-card h3{font-size:12.5px; margin:5px 0 1px; line-height:1.2;}
+    .print-code{font-family:'Fjalla One'; font-size:13px; letter-spacing:.06em; margin-top:2px;}
+    .print-card.print-card-full{grid-column:1 / -1; padding:20px;}
+    .print-card.print-card-full h3{font-size:20px;}
+    .print-card.print-card-full .print-code{font-size:22px;}
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <h1>🧭 Organisateur</h1>
+    <div class="sub">Placement des balises — outil réservé à l'organisateur</div>
+    <div class="badge-warn">Ne partagez pas ce fichier avec les coureurs — donnez-leur uniquement la page « Coureur ».</div>
+  </header>
 
+  <div class="card" id="config-card">
+    <h2>Connexion à la base partagée</h2>
+    <p class="hint">Cette page et celle des coureurs doivent pointer vers le même projet Supabase pour se synchroniser.</p>
+    <div class="field"><label>URL du projet Supabase</label><input type="text" id="cfg-url" placeholder="https://xxxx.supabase.co"></div>
+    <div class="field"><label>Clé publique (anon / publishable)</label><input type="text" id="cfg-key" placeholder="eyJhbGciOi... ou sb_publishable_..."></div>
+    <button class="btn btn-outline" id="btn-save-config">Enregistrer la connexion</button>
+    <div id="config-msg"></div>
+  </div>
+
+  <div id="main-content" style="display:none;">
+
+    <div class="card">
+      <h2>Parcours</h2>
+      <p class="hint">Chaque parcours est indépendant : ses propres balises, réglages et classement. Utile si vous organisez des courses dans plusieurs lieux différents.</p>
+      <div class="field"><label>Parcours actif</label><select id="parcours-select"></select></div>
+      <div class="field"><label>Créer un nouveau parcours</label>
+        <div class="row2"><input type="text" id="new-parcours-name" placeholder="ex. Forêt de Bessède"><button class="btn btn-outline" id="btn-create-parcours" style="width:auto; padding:11px 16px;">Créer</button></div>
+      </div>
+      <div id="parcours-msg"></div>
+    </div>
+
+    <div id="parcours-content" style="display:none;">
+
+      <div class="card">
+        <h2>Réglages de validation</h2>
+        <p class="hint">Rayon de tolérance GPS pour valider une balise, et exigences plus strictes pour le point de Départ / Arrivée.</p>
+        <div class="row2">
+          <div class="field"><label>Rayon balises (m)</label><input type="number" id="radius-input" min="5" max="200"></div>
+          <div class="field"><label>Rayon Départ (m)</label><input type="number" id="start-radius-input" min="3" max="100"></div>
+        </div>
+        <div class="field"><label>Précision GPS max exigée au Départ (m)</label><input type="number" id="acc-input" min="5" max="100"></div>
+        <button class="btn btn-outline" id="btn-save-settings">Enregistrer les réglages</button>
+      </div>
+
+      <div class="card">
+        <h2>Ajouter une balise</h2>
+        <p class="hint">Cliquez sur la carte à l'emplacement exact, ou utilisez la capture GPS si vous êtes sur place.</p>
+        <div id="admin-map"></div>
+        <div class="field"><label>Nom de la balise</label><input type="text" id="new-name" placeholder="ex. Chêne du sentier"></div>
+        <div class="row2">
+          <div class="field"><label>Latitude</label><input type="number" step="0.000001" id="new-lat"></div>
+          <div class="field"><label>Longitude</label><input type="number" step="0.000001" id="new-lon"></div>
+        </div>
+        <div id="gps-status" class="gps-status" style="display:none;"></div>
+        <button class="btn btn-outline" id="btn-capture" style="margin-bottom:10px;">📍 Capturer ma position (haute précision)</button>
+
+        <div class="field"><label>Texte explicatif (affiché aux randonneurs à cette balise)</label>
+          <textarea id="new-desc" placeholder="ex. Ce chêne a plus de 200 ans. Observez son écorce craquelée avant de repartir vers le nord..."></textarea>
+        </div>
+
+        <div class="field"><label>Photo (affichée aux randonneurs à cette balise, optionnel)</label>
+          <input type="file" accept="image/*" id="new-photo">
+          <div id="photo-preview" style="margin-top:8px; display:none;"><img id="photo-preview-img" style="max-width:160px; border-radius:8px; display:block;"><button type="button" class="btn btn-ghost" id="btn-remove-photo" style="width:auto; padding:6px 12px; margin-top:6px; font-size:12px;">Retirer la photo</button></div>
+        </div>
+
+        <div class="field"><label>Cette balise appartient au(x) parcours de taille :</label>
+          <div class="chk-row">
+            <div class="chk"><input type="checkbox" id="new-t-petit" checked><label for="new-t-petit">Petit</label></div>
+            <div class="chk"><input type="checkbox" id="new-t-moyen" checked><label for="new-t-moyen">Moyen</label></div>
+            <div class="chk"><input type="checkbox" id="new-t-grand" checked><label for="new-t-grand">Grand</label></div>
+          </div>
+        </div>
+
+        <div class="chk"><input type="checkbox" id="new-isstart"><label for="new-isstart">Point de Départ / Arrivée (obligatoire, quelle que soit la taille)</label></div>
+        <div class="chk"><input type="checkbox" id="new-isfake"><label for="new-isfake">Fausse balise (piège — compte comme une faute)</label></div>
+        <div id="admin-msg"></div>
+        <button class="btn btn-primary" id="btn-add-balise">Ajouter la balise</button>
+      </div>
+
+      <div class="card">
+        <h2 id="balise-count">Balises du parcours</h2>
+        <div id="balise-list"></div>
+      </div>
+
+      <div class="card">
+        <h2>Fiches à imprimer</h2>
+        <p class="hint">Une fiche par balise avec son QR code et son code de secours. Les fausses balises ne sont pas signalées sur la fiche — c'est le but.</p>
+        <button class="btn btn-secondary" id="btn-print">🖨️ Générer les fiches à imprimer</button>
+      </div>
+
+      <div class="card">
+        <h2>QR code d'accès à l'application</h2>
+        <p class="hint">Génère un QR code qui ouvre la page « Coureur » — à afficher au point de Départ.</p>
+        <div class="field"><label>Lien de la page Coureur (une fois publiée)</label><input type="text" id="app-url" placeholder="https://votre-pseudo.github.io/votre-repo/course-coureur.html"></div>
+        <button class="btn btn-secondary" id="btn-print-app-qr">🖨️ Générer et imprimer ce QR code</button>
+      </div>
+
+      <div class="card">
+        <h2>Classement en cours</h2>
+        <div id="rank-preview" class="hint">Chargement…</div>
+        <button class="btn btn-outline" id="btn-refresh-rank" style="margin-top:8px;">🔄 Actualiser</button>
+      </div>
+
+      <div class="card">
+        <h2 style="color:var(--danger);">Zone dangereuse</h2>
+        <button class="btn btn-danger-outline" id="btn-reset-classement">Effacer les temps de ce parcours</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-danger-outline" id="btn-reset-balises">Effacer les balises de ce parcours</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="print-sheet"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script>
+(function(){
+"use strict";
+
+let SUPABASE_URL = localStorage.getItem('cfg-url') || '';
+let SUPABASE_ANON_KEY = localStorage.getItem('cfg-key') || '';
+
+let parcoursIndex = [];       // [{id, name}]
+let currentParcoursId = null;
+let balises = { list: [], radius: 30, startRadius: 15, startAccuracy: 25 };
+let classement = [];
+const MODE_LABELS = {velo:'Vélo', rando:'Randonnée', course:'Course'};
+const TAILLE_LABELS = {petit:'Petit', moyen:'Moyen', grand:'Grand'};
+
+async function sbGet(key){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/kv_store?key=eq.${encodeURIComponent(key)}&select=value`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer '+SUPABASE_ANON_KEY }
+    });
+    if(!res.ok) return null;
+    const rows = await res.json();
+    return rows.length ? rows[0].value : null;
+  }catch(e){ console.error(e); return null; }
+}
+async function sbSet(key, value){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/kv_store`, {
+      method:'POST',
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer '+SUPABASE_ANON_KEY,
+        'Content-Type':'application/json', Prefer:'resolution=merge-duplicates' },
+      body: JSON.stringify([{key, value}])
+    });
+    return res.ok;
+  }catch(e){ console.error(e); return false; }
+}
+function parcoursKey(id){ return 'parcours-'+id; }
+function classementKey(id){ return 'classement-'+id; }
+
+function uid(){ return Math.random().toString(36).slice(2,8).toUpperCase(); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function formatDuration(sec){
+  sec = Math.max(0, Math.round(sec));
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  const pad=n=>String(n).padStart(2,'0');
+  return h>0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+// ---------- config screen ----------
+document.getElementById('cfg-url').value = SUPABASE_URL;
+document.getElementById('cfg-key').value = SUPABASE_ANON_KEY;
+document.getElementById('btn-save-config').addEventListener('click', async ()=>{
+  const url = document.getElementById('cfg-url').value.trim().replace(/\/$/,'');
+  const key = document.getElementById('cfg-key').value.trim();
+  const msgEl = document.getElementById('config-msg');
+  if(!url || !key){ msgEl.innerHTML = '<div class="msg msg-error">Renseignez l\u2019URL et la clé.</div>'; return; }
+  SUPABASE_URL = url; SUPABASE_ANON_KEY = key;
+  localStorage.setItem('cfg-url', url); localStorage.setItem('cfg-key', key);
+  msgEl.innerHTML = '<div class="msg msg-warn">Connexion en cours…</div>';
+  const ok = await testConnection();
+  if(ok){ msgEl.innerHTML = '<div class="msg msg-success">Connecté.</div>'; await bootMain(); }
+  else { msgEl.innerHTML = '<div class="msg msg-error">Connexion impossible. Vérifiez l\u2019URL, la clé, et que la table kv_store existe.</div>'; }
+});
+async function testConnection(){
+  if(!SUPABASE_URL || !SUPABASE_ANON_KEY) return false;
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/kv_store?select=key&limit=1`, {
+      headers: { apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer '+SUPABASE_ANON_KEY }
+    });
+    return res.ok;
+  }catch(e){ return false; }
+}
+
+// ---------- parcours management ----------
+async function loadParcoursIndex(){
+  const idx = await sbGet('parcours-index');
+  parcoursIndex = Array.isArray(idx) ? idx : [];
+}
+function renderParcoursSelect(){
+  const sel = document.getElementById('parcours-select');
+  sel.innerHTML = parcoursIndex.length===0
+    ? `<option value="">— Aucun parcours, créez-en un ci-dessous —</option>`
+    : parcoursIndex.map(p=>`<option value="${p.id}" ${p.id===currentParcoursId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+}
+document.getElementById('parcours-select').addEventListener('change', async e=>{
+  const id = e.target.value;
+  if(id){ await selectParcours(id); }
+});
+document.getElementById('btn-create-parcours').addEventListener('click', async ()=>{
+  const name = document.getElementById('new-parcours-name').value.trim();
+  const msgEl = document.getElementById('parcours-msg');
+  if(!name){ msgEl.innerHTML = '<div class="msg msg-error">Donnez un nom au parcours.</div>'; return; }
+  const id = uid();
+  parcoursIndex.push({id, name});
+  await sbSet('parcours-index', parcoursIndex);
+  await sbSet(parcoursKey(id), { radius:30, startRadius:15, startAccuracy:25, list:[] });
+  document.getElementById('new-parcours-name').value = '';
+  msgEl.innerHTML = '<div class="msg msg-success">Parcours créé.</div>';
+  renderParcoursSelect();
+  await selectParcours(id);
+});
+async function selectParcours(id){
+  currentParcoursId = id;
+  localStorage.setItem('last-parcours', id);
+  const data = await sbGet(parcoursKey(id));
+  balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[] }, data || {});
+  const c = await sbGet(classementKey(id));
+  classement = Array.isArray(c) ? c : [];
+  document.getElementById('parcours-content').style.display = 'block';
+  fillSettingsInputs();
+  if(!adminMap) initAdminMap();
+  refreshAdminMarkers();
+  renderBaliseList();
+  renderRankPreview();
+  renderParcoursSelect();
+}
+async function saveBalises(){ if(currentParcoursId) return sbSet(parcoursKey(currentParcoursId), balises); }
+async function saveClassement(){ if(currentParcoursId) return sbSet(classementKey(currentParcoursId), classement); }
+
+// ---------- admin map ----------
+let adminMap, previewMarker, existingLayer;
+function initAdminMap(){
+  adminMap = L.map('admin-map');
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom:19, attribution:'Tiles &copy; Esri'
+  }).addTo(adminMap);
+  adminMap.setView([46.6,2.4], 6);
+  existingLayer = L.layerGroup().addTo(adminMap);
+  adminMap.on('click', e=> placePreview(e.latlng.lat, e.latlng.lng));
+  if(navigator.geolocation){
+    navigator.geolocation.getCurrentPosition(pos=>{
+      adminMap.setView([pos.coords.latitude, pos.coords.longitude], 16);
+    }, ()=>{}, {enableHighAccuracy:true, timeout:6000});
+  }
+}
+function placePreview(lat, lon){
+  document.getElementById('new-lat').value = lat.toFixed(6);
+  document.getElementById('new-lon').value = lon.toFixed(6);
+  if(!previewMarker){
+    previewMarker = L.marker([lat,lon], {draggable:true}).addTo(adminMap);
+    previewMarker.on('dragend', ()=>{
+      const p = previewMarker.getLatLng();
+      document.getElementById('new-lat').value = p.lat.toFixed(6);
+      document.getElementById('new-lon').value = p.lng.toFixed(6);
+    });
+  } else { previewMarker.setLatLng([lat,lon]); }
+  adminMap.panTo([lat,lon]);
+}
+function refreshAdminMarkers(){
+  if(!adminMap) return;
+  existingLayer.clearLayers();
+  balises.list.forEach(b=>{
+    const color = b.isStart ? '#E0611E' : (b.isFake ? '#A73E32' : '#3C6A4C');
+    const icon = L.divIcon({className:'', html:`<div style="width:18px;height:18px;border-radius:${b.isStart?'5px':'50%'};background:${color};border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.5);"></div>`, iconSize:[18,18], iconAnchor:[9,9]});
+    L.marker([b.lat,b.lon], {icon}).addTo(existingLayer).bindTooltip(b.name);
+  });
+}
+
+function fillSettingsInputs(){
+  document.getElementById('radius-input').value = balises.radius;
+  document.getElementById('start-radius-input').value = balises.startRadius;
+  document.getElementById('acc-input').value = balises.startAccuracy;
+}
+document.getElementById('btn-save-settings').addEventListener('click', async ()=>{
+  const r = parseInt(document.getElementById('radius-input').value,10);
+  const sr = parseInt(document.getElementById('start-radius-input').value,10);
+  const acc = parseInt(document.getElementById('acc-input').value,10);
+  if(r>0) balises.radius = r;
+  if(sr>0) balises.startRadius = sr;
+  if(acc>0) balises.startAccuracy = acc;
+  await saveBalises();
+});
+
+let capturing = false;
+document.getElementById('btn-capture').addEventListener('click', async ()=>{
+  if(capturing) return;
+  capturing = true;
+  const statusEl = document.getElementById('gps-status');
+  statusEl.style.display = 'block';
+  const samples = [];
+  const targetSamples = 6;
+  statusEl.textContent = 'Ne bougez pas — mesure en cours (0/'+targetSamples+')…';
+  const watchId = navigator.geolocation.watchPosition(pos=>{
+    samples.push(pos.coords);
+    statusEl.textContent = `Ne bougez pas — mesure en cours (${samples.length}/${targetSamples})… précision actuelle ${Math.round(pos.coords.accuracy)} m`;
+  }, ()=>{ statusEl.textContent = "GPS indisponible. Vérifiez que la localisation est autorisée."; }, {enableHighAccuracy:true, maximumAge:0});
+  await new Promise(res=>{
+    const iv = setInterval(()=>{ if(samples.length>=targetSamples){ clearInterval(iv); res(); } }, 300);
+    setTimeout(()=>{ clearInterval(iv); res(); }, 9000);
+  });
+  navigator.geolocation.clearWatch(watchId);
+  capturing = false;
+  if(samples.length===0){ statusEl.textContent = "Aucune mesure obtenue. Réessayez en extérieur."; return; }
+  let sumLat=0, sumLon=0, sumW=0;
+  samples.forEach(c=>{ const w = 1/Math.max(c.accuracy,1)**2; sumLat+=c.latitude*w; sumLon+=c.longitude*w; sumW+=w; });
+  const lat = sumLat/sumW, lon = sumLon/sumW;
+  const bestAcc = Math.min(...samples.map(c=>c.accuracy));
+  placePreview(lat, lon);
+  if(adminMap) adminMap.setView([lat,lon], 18);
+  statusEl.textContent = `Position enregistrée à partir de ${samples.length} mesures — précision estimée ≈ ${Math.round(bestAcc)} m.`;
+});
+
+let pendingPhoto = null;
+document.getElementById('new-photo').addEventListener('change', e=>{
+  const file = e.target.files[0];
+  if(!file) return;
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = ev=>{
+    img.onload = ()=>{
+      const maxDim = 900;
+      const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width = img.width*scale; canvas.height = img.height*scale;
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      pendingPhoto = canvas.toDataURL('image/jpeg', 0.72);
+      document.getElementById('photo-preview-img').src = pendingPhoto;
+      document.getElementById('photo-preview').style.display = 'block';
+    };
+    img.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+document.getElementById('btn-remove-photo').addEventListener('click', ()=>{
+  pendingPhoto = null;
+  document.getElementById('new-photo').value = '';
+  document.getElementById('photo-preview').style.display = 'none';
+});
+
+document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
+  const name = document.getElementById('new-name').value.trim();
+  const lat = parseFloat(document.getElementById('new-lat').value);
+  const lon = parseFloat(document.getElementById('new-lon').value);
+  const desc = document.getElementById('new-desc').value.trim();
+  const isStart = document.getElementById('new-isstart').checked;
+  const isFake = document.getElementById('new-isfake').checked;
+  const tailles = [];
+  if(document.getElementById('new-t-petit').checked) tailles.push('petit');
+  if(document.getElementById('new-t-moyen').checked) tailles.push('moyen');
+  if(document.getElementById('new-t-grand').checked) tailles.push('grand');
+  const msgEl = document.getElementById('admin-msg');
+  if(!name || isNaN(lat) || isNaN(lon)){
+    msgEl.innerHTML = '<div class="msg msg-error">Renseignez un nom et une position (cliquez sur la carte).</div>';
+    return;
+  }
+  if(isStart && isFake){
+    msgEl.innerHTML = '<div class="msg msg-error">Une balise ne peut pas être à la fois le Départ et un piège.</div>';
+    return;
+  }
+  if(isStart) balises.list.forEach(b=>b.isStart=false);
+  balises.list.push({ id: uid(), name, lat, lon, isStart, isFake, description: desc, photo: pendingPhoto, tailles });
+  msgEl.innerHTML = '<div class="msg msg-success">Balise ajoutée.</div>';
+  document.getElementById('new-name').value='';
+  document.getElementById('new-lat').value='';
+  document.getElementById('new-lon').value='';
+  document.getElementById('new-desc').value='';
+  document.getElementById('new-photo').value='';
+  document.getElementById('photo-preview').style.display='none';
+  pendingPhoto = null;
+  document.getElementById('new-isstart').checked=false;
+  document.getElementById('new-isfake').checked=false;
+  document.getElementById('new-t-petit').checked=true;
+  document.getElementById('new-t-moyen').checked=true;
+  document.getElementById('new-t-grand').checked=true;
+  document.getElementById('gps-status').style.display='none';
+  if(previewMarker){ adminMap.removeLayer(previewMarker); previewMarker=null; }
+  await saveBalises();
+  renderBaliseList();
+  refreshAdminMarkers();
+});
+
+function renderBaliseList(){
+  document.getElementById('balise-count').textContent = `Balises du parcours (${balises.list.length})`;
+  const el = document.getElementById('balise-list');
+  if(balises.list.length===0){ el.innerHTML = '<p class="hint">Aucune balise pour l\u2019instant.</p>'; return; }
+  el.innerHTML = balises.list.map(b=>`
+    <div class="balise-row">
+      <div class="info">
+        <div class="nm">${escapeHtml(b.name)}${b.isStart?'<span class="tag tag-start">DÉPART</span>':''}${b.isFake?'<span class="tag tag-fake">PIÈGE</span>':''}
+          ${!b.isStart && !b.isFake ? (b.tailles||[]).map(t=>`<span class="tag tag-taille">${TAILLE_LABELS[t]}</span>`).join('') : ''}
+        </div>
+        <div class="co">${b.lat.toFixed(5)}, ${b.lon.toFixed(5)} · code ${b.id}</div>
+        ${b.description ? `<div class="desc">${escapeHtml(b.description)}</div>` : ''}
+        ${b.photo ? `<img src="${b.photo}" style="max-width:80px; border-radius:6px; margin-top:4px; display:block;">` : ''}
+      </div>
+      <button class="icon-btn" data-del="${b.id}" title="Supprimer">✕</button>
+    </div>`).join('');
+  el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    balises.list = balises.list.filter(x=>x.id!==btn.dataset.del);
+    await saveBalises();
+    renderBaliseList();
+    refreshAdminMarkers();
+  }));
+}
+
+document.getElementById('btn-print').addEventListener('click', ()=>{
+  const sheet = document.getElementById('print-sheet');
+  sheet.innerHTML = '';
+  balises.list.forEach(b=>{
+    const card = document.createElement('div');
+    card.className = 'print-card';
+    const qrDiv = document.createElement('div');
+    card.appendChild(qrDiv);
+    const h = document.createElement('h3');
+    h.textContent = b.name + (b.isStart ? ' (Départ / Arrivée)' : '');
+    card.appendChild(h);
+    const code = document.createElement('div');
+    code.className = 'print-code';
+    code.textContent = 'Code : ' + b.id;
+    card.appendChild(code);
+    sheet.appendChild(card);
+    new QRCode(qrDiv, { text: 'BAL:'+b.id, width: 120, height: 120 });
+  });
+  setTimeout(()=>window.print(), 300);
+});
+
+document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
+document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
+  const url = document.getElementById('app-url').value.trim();
+  if(!url){ alert("Renseignez d'abord le lien de la page Coureur."); return; }
+  localStorage.setItem('app-url', url);
+  const sheet = document.getElementById('print-sheet');
+  sheet.innerHTML = '';
+  const card = document.createElement('div');
+  card.className = 'print-card print-card-full';
+  const qrDiv = document.createElement('div');
+  card.appendChild(qrDiv);
+  const h = document.createElement('h3');
+  h.textContent = 'Rejoindre la course';
+  card.appendChild(h);
+  const link = document.createElement('div');
+  link.style.fontSize = '13px';
+  link.style.wordBreak = 'break-all';
+  link.textContent = url;
+  card.appendChild(link);
+  sheet.appendChild(card);
+  new QRCode(qrDiv, { text: url, width: 220, height: 220 });
+  setTimeout(()=>window.print(), 300);
+});
+
+document.getElementById('btn-reset-classement').addEventListener('click', async ()=>{
+  if(confirm('Effacer définitivement tous les temps de ce parcours ?')){
+    classement = []; await saveClassement(); renderRankPreview();
+  }
+});
+document.getElementById('btn-reset-balises').addEventListener('click', async ()=>{
+  if(confirm('Effacer toutes les balises de ce parcours ?')){
+    balises.list = []; await saveBalises(); renderBaliseList(); refreshAdminMarkers();
+  }
+});
+document.getElementById('btn-refresh-rank').addEventListener('click', async ()=>{
+  if(!currentParcoursId) return;
+  const c = await sbGet(classementKey(currentParcoursId)); if(c) classement = c;
+  renderRankPreview();
+});
+
+function renderRankPreview(){
+  const el = document.getElementById('rank-preview');
+  if(classement.length===0){ el.textContent = 'Aucun temps enregistré pour le moment.'; return; }
+  const modes = ['velo','rando','course'];
+  const tailles = ['petit','moyen','grand'];
+  let html = '';
+  modes.forEach(m=>{
+    tailles.forEach(t=>{
+      const rows = classement.filter(r=>r.mode===m && (r.taille||'grand')===t).sort((a,b)=>a.seconds-b.seconds).slice(0,3);
+      if(rows.length===0) return;
+      html += `<h3 style="font-size:13.5px; margin:12px 0 6px; color:var(--forest);">${MODE_LABELS[m]} — ${TAILLE_LABELS[t]}</h3>
+        <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Temps</th><th>Fautes</th></tr></thead><tbody>
+        ${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${formatDuration(r.seconds)}</td><td>${r.faults||0}</td></tr>`).join('')}
+        </tbody></table>`;
+    });
+  });
+  el.innerHTML = html || 'Aucun temps enregistré pour le moment.';
+}
+
+async function bootMain(){
+  document.getElementById('config-card').style.display = 'none';
+  document.getElementById('main-content').style.display = 'block';
+  await loadParcoursIndex();
+  renderParcoursSelect();
+  const last = localStorage.getItem('last-parcours');
+  if(last && parcoursIndex.find(p=>p.id===last)){ await selectParcours(last); }
+  else if(parcoursIndex.length>0){ await selectParcours(parcoursIndex[0].id); }
+  setInterval(async ()=>{ if(currentParcoursId){ const c = await sbGet(classementKey(currentParcoursId)); if(c){ classement = c; renderRankPreview(); } } }, 15000);
+}
+
+(async function init(){
+  if(SUPABASE_URL && SUPABASE_ANON_KEY && await testConnection()){
+    await bootMain();
+  }
+})();
+})();
+</script>
+</body>
+</html>
