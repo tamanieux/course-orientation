@@ -187,8 +187,8 @@
 (function(){
 "use strict";
 
-let SUPABASE_URL = "https://ydgihoqtbadjjavvmpuj.supabase.co";
-let SUPABASE_ANON_KEY = "sb_publishable_2pgx8EUInpKFNQ_9sznL0w_W5Q4pSdT";
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 
 const MODES = [
   {id:'velo', label:'Vélo', icon:'🚴'},
@@ -292,7 +292,7 @@ function findBaliseByCode(code){
   return balises.list.find(b=>b.id===m);
 }
 function escapeHtml(s){ return String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
-function othersFor(taille){ return balises.list.filter(b=>!b.isStart && !b.isFake && (b.tailles||['petit','moyen','grand']).includes(taille)); }
+function othersFor(taille, mode){ return balises.list.filter(b=>!b.isStart && !b.isFake && (b.tailles||['petit','moyen','grand']).includes(taille) && (b.modes||['velo','rando','course']).includes(mode)); }
 
 // ================= CONFIG SCREEN ================
 document.getElementById('cfg-url').value = localStorage.getItem('cfg-url') || '';
@@ -436,9 +436,9 @@ function renderPlayScreen(){
       el.innerHTML = `<div class="card"><p style="text-align:center; font-size:14px;">Chargement du parcours…</p></div>`;
       await loadParcoursData(currentParcoursId);
       const start = startBalise();
-      const others = othersFor(selectedTaille);
+      const others = othersFor(selectedTaille, selectedMode);
       if(!start || others.length===0){
-        playMsg = "Ce parcours n'est pas encore prêt pour cette taille. Choisissez-en une autre ou revenez plus tard.";
+        playMsg = "Ce parcours n'est pas encore prêt pour cette combinaison mode/taille. Choisissez-en une autre ou revenez plus tard.";
         renderPlayScreen();
         return;
       }
@@ -450,7 +450,7 @@ function renderPlayScreen(){
   }
 
   const start = startBalise();
-  const others = othersFor(activeRun.taille);
+  const others = othersFor(activeRun.taille, activeRun.mode);
 
   if(activeRun.finished){
     const rank = computeRank(activeRun.mode, activeRun.taille, activeRun.finishedAt - activeRun.startedAt);
@@ -592,8 +592,8 @@ async function handleScan(rawCode){
     closeScanner(); playMsg = {ok:false, text:'Fausse balise ! +1 faute.'}; renderPlayScreen(); return;
   }
   if(bal.isStart){ setScannerError("Utilisez le bouton dédié dans l'onglet Jouer pour le Départ / l'Arrivée."); return; }
-  const others = othersFor(activeRun.taille);
-  if(!others.find(o=>o.id===bal.id)){ setScannerError(`"${bal.name}" ne fait pas partie de ce parcours (${TAILLES.find(t=>t.id===activeRun.taille).label}).`); return; }
+  const others = othersFor(activeRun.taille, activeRun.mode);
+  if(!others.find(o=>o.id===bal.id)){ setScannerError(`"${bal.name}" ne fait pas partie de ce parcours (${MODES.find(m=>m.id===activeRun.mode).label} / ${TAILLES.find(t=>t.id===activeRun.taille).label}).`); return; }
   if(activeRun.visited[bal.id]){ setScannerError(`"${bal.name}" est déjà validée.`); return; }
   activeRun.visited[bal.id] = Date.now();
   persistActiveRun();
@@ -672,7 +672,8 @@ function renderMapScreen(){
   baliseMarkers = {};
   const pts = [];
   const taille = activeRun ? activeRun.taille : null;
-  const visible = balises.list.filter(b=> !b.isFake && (b.isStart || !taille || (b.tailles||['petit','moyen','grand']).includes(taille)));
+  const modeF = activeRun ? activeRun.mode : null;
+  const visible = balises.list.filter(b=> !b.isFake && (b.isStart || (!taille || (b.tailles||['petit','moyen','grand']).includes(taille)) && (!modeF || (b.modes||['velo','rando','course']).includes(modeF))));
   visible.forEach(b=>{
     const visited = activeRun && activeRun.visited && activeRun.visited[b.id];
     const isStart = b.isStart;

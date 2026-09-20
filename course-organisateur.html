@@ -59,6 +59,7 @@
   .tag-start{background:var(--trail); color:#fff;}
   .tag-fake{background:var(--danger); color:#fff;}
   .tag-taille{background:var(--gold); color:#fff;}
+  .tag-mode{background:var(--forest-light); color:#fff;}
   .icon-btn{background:none; border:none; color:var(--danger); cursor:pointer; padding:6px;}
   table.rank{width:100%; border-collapse:collapse; font-size:13.5px;}
   table.rank th{text-align:left; font-size:10.5px; text-transform:uppercase; color:var(--forest-light); padding:5px 6px; border-bottom:2px solid var(--forest);}
@@ -142,6 +143,7 @@
           <div id="photo-preview" style="margin-top:8px; display:none;"><img id="photo-preview-img" style="max-width:160px; border-radius:8px; display:block;"><button type="button" class="btn btn-ghost" id="btn-remove-photo" style="width:auto; padding:6px 12px; margin-top:6px; font-size:12px;">Retirer la photo</button></div>
         </div>
 
+        <div id="taille-mode-fields">
         <div class="field"><label>Cette balise appartient au(x) parcours de taille :</label>
           <div class="chk-row">
             <div class="chk"><input type="checkbox" id="new-t-petit" checked><label for="new-t-petit">Petit</label></div>
@@ -150,7 +152,16 @@
           </div>
         </div>
 
-        <div class="chk"><input type="checkbox" id="new-isstart"><label for="new-isstart">Point de Départ / Arrivée (obligatoire, quelle que soit la taille)</label></div>
+        <div class="field"><label>Cette balise appartient au(x) mode(s) :</label>
+          <div class="chk-row">
+            <div class="chk"><input type="checkbox" id="new-m-velo" checked><label for="new-m-velo">Vélo</label></div>
+            <div class="chk"><input type="checkbox" id="new-m-rando" checked><label for="new-m-rando">Randonnée</label></div>
+            <div class="chk"><input type="checkbox" id="new-m-course" checked><label for="new-m-course">Course</label></div>
+          </div>
+        </div>
+        </div>
+
+        <div class="chk"><input type="checkbox" id="new-isstart"><label for="new-isstart">Point de Départ / Arrivée — un seul par parcours, valable pour tous les modes et toutes les tailles</label></div>
         <div class="chk"><input type="checkbox" id="new-isfake"><label for="new-isfake">Fausse balise (piège — compte comme une faute)</label></div>
         <div id="admin-msg"></div>
         <button class="btn btn-primary" id="btn-add-balise">Ajouter la balise</button>
@@ -422,6 +433,10 @@ document.getElementById('btn-remove-photo').addEventListener('click', ()=>{
   document.getElementById('photo-preview').style.display = 'none';
 });
 
+document.getElementById('new-isstart').addEventListener('change', e=>{
+  document.getElementById('taille-mode-fields').style.display = e.target.checked ? 'none' : 'block';
+});
+
 document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
   const name = document.getElementById('new-name').value.trim();
   const lat = parseFloat(document.getElementById('new-lat').value);
@@ -433,6 +448,10 @@ document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
   if(document.getElementById('new-t-petit').checked) tailles.push('petit');
   if(document.getElementById('new-t-moyen').checked) tailles.push('moyen');
   if(document.getElementById('new-t-grand').checked) tailles.push('grand');
+  const modes = [];
+  if(document.getElementById('new-m-velo').checked) modes.push('velo');
+  if(document.getElementById('new-m-rando').checked) modes.push('rando');
+  if(document.getElementById('new-m-course').checked) modes.push('course');
   const msgEl = document.getElementById('admin-msg');
   if(!name || isNaN(lat) || isNaN(lon)){
     msgEl.innerHTML = '<div class="msg msg-error">Renseignez un nom et une position (cliquez sur la carte).</div>';
@@ -443,7 +462,7 @@ document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
     return;
   }
   if(isStart) balises.list.forEach(b=>b.isStart=false);
-  balises.list.push({ id: uid(), name, lat, lon, isStart, isFake, description: desc, photo: pendingPhoto, tailles });
+  balises.list.push({ id: uid(), name, lat, lon, isStart, isFake, description: desc, photo: pendingPhoto, tailles, modes });
   msgEl.innerHTML = '<div class="msg msg-success">Balise ajoutée.</div>';
   document.getElementById('new-name').value='';
   document.getElementById('new-lat').value='';
@@ -457,6 +476,9 @@ document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
   document.getElementById('new-t-petit').checked=true;
   document.getElementById('new-t-moyen').checked=true;
   document.getElementById('new-t-grand').checked=true;
+  document.getElementById('new-m-velo').checked=true;
+  document.getElementById('new-m-rando').checked=true;
+  document.getElementById('new-m-course').checked=true;
   document.getElementById('gps-status').style.display='none';
   if(previewMarker){ adminMap.removeLayer(previewMarker); previewMarker=null; }
   await saveBalises();
@@ -473,6 +495,7 @@ function renderBaliseList(){
       <div class="info">
         <div class="nm">${escapeHtml(b.name)}${b.isStart?'<span class="tag tag-start">DÉPART</span>':''}${b.isFake?'<span class="tag tag-fake">PIÈGE</span>':''}
           ${!b.isStart && !b.isFake ? (b.tailles||[]).map(t=>`<span class="tag tag-taille">${TAILLE_LABELS[t]}</span>`).join('') : ''}
+          ${!b.isStart && !b.isFake ? (b.modes||[]).map(m=>`<span class="tag tag-mode">${MODE_LABELS[m]}</span>`).join('') : ''}
         </div>
         <div class="co">${b.lat.toFixed(5)}, ${b.lon.toFixed(5)} · code ${b.id}</div>
         ${b.description ? `<div class="desc">${escapeHtml(b.description)}</div>` : ''}
