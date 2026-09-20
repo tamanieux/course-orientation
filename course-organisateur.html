@@ -489,6 +489,10 @@ function renderBaliseList(){
 }
 
 document.getElementById('btn-print').addEventListener('click', ()=>{
+  const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/$/,'');
+  if(!appUrl){
+    alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. Impression avec un code simple pour cette fois.");
+  }
   const sheet = document.getElementById('print-sheet');
   sheet.innerHTML = '';
   balises.list.forEach(b=>{
@@ -504,7 +508,8 @@ document.getElementById('btn-print').addEventListener('click', ()=>{
     code.textContent = 'Code : ' + b.id;
     card.appendChild(code);
     sheet.appendChild(card);
-    new QRCode(qrDiv, { text: 'BAL:'+b.id, width: 120, height: 120 });
+    const qrContent = appUrl ? `${appUrl}?bal=${b.id}&pc=${currentParcoursId}` : ('BAL:'+b.id);
+    new QRCode(qrDiv, { text: qrContent, width: 120, height: 120 });
   });
   setTimeout(()=>window.print(), 300);
 });
