@@ -51,6 +51,7 @@
   .mode-btn.selected{border-color:var(--trail); background:#FBEBE0;}
   .mode-btn .ic{font-size:22px; display:block; margin-bottom:4px;}
   .mode-btn .lbl{font-size:12px; font-weight:600;}
+  .mode-btn.not-ready{opacity:.35; filter:grayscale(1); cursor:default;}
 
   .timer{font-family:'Fjalla One'; font-size:56px; text-align:center; color:var(--forest); font-variant-numeric:tabular-nums; margin:6px 0 2px;}
   .timer-label{text-align:center; font-size:12px; color:var(--forest-light); text-transform:uppercase; letter-spacing:.08em; margin-bottom:14px;}
@@ -187,8 +188,8 @@
 (function(){
 "use strict";
 
-let SUPABASE_URL = "https://ydgihoqtbadjjavvmpuj.supabase.co";
-let SUPABASE_ANON_KEY = "sb_publishable_2pgx8EUInpKFNQ_9sznL0w_W5Q4pSdT";
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 
 const MODES = [
   {id:'velo', label:'Vélo', icon:'🚴'},
@@ -371,6 +372,19 @@ function updateTabbarVisibility(){
   }
 }
 
+let setupReadinessCache = {};
+async function loadReadiness(id){
+  if(setupReadinessCache[id]) return setupReadinessCache[id];
+  const data = await sbGet(parcoursKey(id));
+  const list = (data && Array.isArray(data.list)) ? data.list : [];
+  const others = list.filter(b=>!b.isStart && !b.isFake);
+  const modes = new Set(MODES.filter(m=>others.some(b=>(b.modes||['velo','rando','course']).includes(m.id))).map(m=>m.id));
+  const tailles = new Set(TAILLES.filter(t=>others.some(b=>(b.tailles||['petit','moyen','grand']).includes(t.id))).map(t=>t.id));
+  const res = { modes, tailles, hasStart: list.some(b=>b.isStart) };
+  setupReadinessCache[id] = res;
+  return res;
+}
+
 function renderPlayScreen(){
   updateTabbarVisibility();
   stopProximityWatch();
@@ -398,6 +412,10 @@ function renderPlayScreen(){
       return;
     }
     if(selectedParcoursForSetup===null) selectedParcoursForSetup = currentParcoursId || parcoursIndex[0].id;
+    const readiness = setupReadinessCache[selectedParcoursForSetup];
+    if(!readiness){ loadReadiness(selectedParcoursForSetup).then(()=>renderPlayScreen()); }
+    const modeReady = m => !readiness || readiness.modes.has(m);
+    const tailleReady = t => !readiness || readiness.tailles.has(t);
     el.innerHTML = `
       <div class="card">
         <div class="field">
@@ -407,23 +425,23 @@ function renderPlayScreen(){
         <div class="field">
           <label>Mode de course</label>
           <div class="mode-grid" id="mode-grid">
-            ${MODES.map(m=>`<div class="mode-btn ${selectedMode===m.id?'selected':''}" data-mode="${m.id}"><span class="ic">${m.icon}</span><span class="lbl">${m.label}</span></div>`).join('')}
+            ${MODES.map(m=>`<div class="mode-btn ${selectedMode===m.id?'selected':''} ${modeReady(m.id)?'':'not-ready'}" data-mode="${m.id}"><span class="ic">${m.icon}</span><span class="lbl">${m.label}</span></div>`).join('')}
           </div>
         </div>
         <div class="field">
           <label>Taille du parcours</label>
           <div class="mode-grid" id="taille-grid">
-            ${TAILLES.map(t=>`<div class="mode-btn ${selectedTaille===t.id?'selected':''}" data-taille="${t.id}"><span class="ic">${t.icon}</span><span class="lbl">${t.label}</span></div>`).join('')}
+            ${TAILLES.map(t=>`<div class="mode-btn ${selectedTaille===t.id?'selected':''} ${tailleReady(t.id)?'':'not-ready'}" data-taille="${t.id}"><span class="ic">${t.icon}</span><span class="lbl">${t.label}</span></div>`).join('')}
           </div>
         </div>
         <div class="field"><label>Votre nom</label><input type="text" id="player-name" placeholder="Votre prénom" value="${escapeHtml(playerNameDraft)}"></div>
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-begin">Commencer</button>
       </div>`;
-    document.getElementById('setup-parcours').addEventListener('change', e=>{ selectedParcoursForSetup = e.target.value; });
+    document.getElementById('setup-parcours').addEventListener('change', e=>{ selectedParcoursForSetup = e.target.value; renderPlayScreen(); });
     document.getElementById('player-name').addEventListener('input', e=> playerNameDraft = e.target.value );
-    el.querySelectorAll('#mode-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedMode=b.dataset.mode; renderPlayScreen(); }) );
-    el.querySelectorAll('#taille-grid .mode-btn').forEach(b=> b.addEventListener('click', ()=>{ selectedTaille=b.dataset.taille; renderPlayScreen(); }) );
+    el.querySelectorAll('#mode-grid .mode-btn:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedMode=b.dataset.mode; renderPlayScreen(); }) );
+    el.querySelectorAll('#taille-grid .mode-btn:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedTaille=b.dataset.taille; renderPlayScreen(); }) );
     document.getElementById('btn-begin').addEventListener('click', async ()=>{
       const name = document.getElementById('player-name').value.trim();
       if(!selectedParcoursForSetup){ playMsg='Choisissez un parcours.'; renderPlayScreen(); return; }
