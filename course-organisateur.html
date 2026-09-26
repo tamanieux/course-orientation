@@ -686,12 +686,13 @@ document.getElementById('btn-print-overview-map').addEventListener('click', ()=>
 
 
 document.getElementById('btn-print').addEventListener('click', ()=>{
-  const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/$/,'');
+  const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/\$/,'');
   if(!appUrl){
     alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. Impression avec un code simple pour cette fois.");
   }
   const sheet = document.getElementById('print-sheet');
   sheet.innerHTML = '';
+  
   balises.list.forEach(b=>{
     const card = document.createElement('div');
     card.className = 'print-card';
@@ -705,12 +706,29 @@ document.getElementById('btn-print').addEventListener('click', ()=>{
     code.textContent = 'Code : ' + b.id;
     card.appendChild(code);
     sheet.appendChild(card);
+    
     const qrContent = appUrl ? `${appUrl}?bal=${b.id}&pc=${currentParcoursId}` : ('BAL:'+b.id);
+    
+    // 1. Génération du QR Code
     new QRCode(qrDiv, { text: qrContent, width: 120, height: 120 });
+
+    // 2. CORRECTION : Conversion immédiate du canvas en image imprimable
+    const canvas = qrDiv.querySelector('canvas');
+    if (canvas) {
+      const img = document.createElement('img');
+      img.src = canvas.toDataURL('image/png');
+      img.style.width = '120px';
+      img.style.height = '120px';
+      qrDiv.appendChild(img);    // On ajoute l'image au conteneur
+      canvas.style.display = 'none'; // On cache le canvas qui ne s'imprime pas
+    }
   });
+
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 3000);
+  setTimeout(()=>window.print(), 500); // 3000ms n'est plus nécessaire, 500ms suffisent largement maintenant
 });
+
+
 
 document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
 document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
