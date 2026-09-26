@@ -93,6 +93,7 @@
   .mode-tabs button{flex:1; padding:9px 4px; border-radius:8px; border:1.5px solid var(--line); background:#fff;
     font-family:'Work Sans'; font-weight:600; font-size:13px; cursor:pointer; color:var(--forest);}
   .mode-tabs button.active{background:var(--forest); color:#fff; border-color:var(--forest);}
+  .mode-tabs button.not-ready{opacity:.35; filter:grayscale(1); cursor:default;}
   table.rank{width:100%; border-collapse:collapse;}
   table.rank th{text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--forest-light);
     padding:6px 8px; border-bottom:2px solid var(--forest);}
@@ -719,21 +720,45 @@ function updateUserMarker(){
 }
 
 // ================= CLASSEMENT SCREEN =================
+let rankParcoursId = null;
+let rankClassementCache = {};
+async function ensureRankClassement(id){
+  if(rankClassementCache[id]) return rankClassementCache[id];
+  const c = await sbGet(classementKey(id));
+  const arr = Array.isArray(c) ? c : [];
+  rankClassementCache[id] = arr;
+  return arr;
+}
+
 function renderClassementScreen(){
   const el = document.getElementById('screen-classement');
-  if(!currentParcoursId){
-    el.innerHTML = `<div class="card"><p style="font-size:14px;">Choisissez d'abord un parcours dans l'onglet Jouer.</p></div>`;
+  if(parcoursIndex.length===0){
+    el.innerHTML = `<div class="card"><p style="font-size:14px;">Aucun parcours disponible pour le moment.</p></div>`;
     return;
   }
-  const rows = classement.filter(r=>r.mode===selectedRankMode && (r.taille||'grand')===selectedRankTaille).sort((a,b)=>a.seconds-b.seconds);
+  if(!rankParcoursId){ rankParcoursId = currentParcoursId || parcoursIndex[0].id; }
+
+  const parcoursButtons = parcoursIndex.map(p=>{
+    const readiness = setupReadinessCache[p.id];
+    if(!readiness) loadReadiness(p.id).then(()=>renderClassementScreen());
+    const ready = !readiness || (readiness.hasStart && readiness.modes.size>0);
+    return `<button data-p="${p.id}" class="${p.id===rankParcoursId?'active':''} ${ready?'':'not-ready'}">${escapeHtml(p.name)}</button>`;
+  }).join('');
+
+  const cached = rankClassementCache[rankParcoursId];
+  if(!cached){ ensureRankClassement(rankParcoursId).then(()=>renderClassementScreen()); }
+  const rows = (cached||[]).filter(r=>r.mode===selectedRankMode && (r.taille||'grand')===selectedRankTaille).sort((a,b)=>a.seconds-b.seconds);
+
   el.innerHTML = `
+    <div class="mode-tabs">${parcoursButtons}</div>
     <div class="mode-tabs">${MODES.map(m=>`<button data-m="${m.id}" class="${selectedRankMode===m.id?'active':''}">${m.icon} ${m.label}</button>`).join('')}</div>
     <div class="mode-tabs">${TAILLES.map(t=>`<button data-t="${t.id}" class="${selectedRankTaille===t.id?'active':''}">${t.icon} ${t.label}</button>`).join('')}</div>
     <div class="card">
-      ${rows.length===0 ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Aucun temps enregistré pour cette combinaison.</p>` : `
+      ${!cached ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Chargement…</p>` : (rows.length===0 ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Aucun temps enregistré pour cette combinaison.</p>` : `
       <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Fautes</th><th style="text-align:right;">Temps</th></tr></thead>
-      <tbody>${rows.map((r,i)=>`<tr><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`}
+      <tbody>${rows.map((r,i)=>`<tr><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
     </div>`;
+  el.querySelectorAll('.mode-tabs button[data-p]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ rankParcoursId=b.dataset.p; renderClassementScreen(); }) );
   el.querySelectorAll('.mode-tabs button[data-m]').forEach(b=> b.addEventListener('click', ()=>{ selectedRankMode=b.dataset.m; renderClassementScreen(); }) );
   el.querySelectorAll('.mode-tabs button[data-t]').forEach(b=> b.addEventListener('click', ()=>{ selectedRankTaille=b.dataset.t; renderClassementScreen(); }) );
 }
