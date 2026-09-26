@@ -108,6 +108,9 @@
       <h2>Parcours</h2>
       <p class="hint">Chaque parcours est indépendant : ses propres balises, réglages et classement. Utile si vous organisez des courses dans plusieurs lieux différents.</p>
       <div class="field"><label>Parcours actif</label><select id="parcours-select"></select></div>
+      <div class="field"><label>Renommer le parcours actif</label>
+        <div class="row2"><input type="text" id="rename-parcours-input"><button class="btn btn-outline" id="btn-rename-parcours" style="width:auto; padding:11px 16px;">Renommer</button></div>
+      </div>
       <div class="field"><label>Créer un nouveau parcours</label>
         <div class="row2"><input type="text" id="new-parcours-name" placeholder="ex. Forêt de Bessède"><button class="btn btn-outline" id="btn-create-parcours" style="width:auto; padding:11px 16px;">Créer</button></div>
       </div>
@@ -170,6 +173,8 @@
         <div class="chk"><input type="checkbox" id="new-isfake"><label for="new-isfake">Fausse balise (piège — compte comme une faute)</label></div>
         <div id="admin-msg"></div>
         <button class="btn btn-primary" id="btn-add-balise">Ajouter la balise</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-ghost" id="btn-cancel-edit" style="display:none;">Annuler la modification</button>
       </div>
 
       <div class="card">
@@ -302,10 +307,23 @@ function renderParcoursSelect(){
   sel.innerHTML = parcoursIndex.length===0
     ? `<option value="">— Aucun parcours, créez-en un ci-dessous —</option>`
     : parcoursIndex.map(p=>`<option value="${p.id}" ${p.id===currentParcoursId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+  const current = parcoursIndex.find(p=>p.id===currentParcoursId);
+  document.getElementById('rename-parcours-input').value = current ? current.name : '';
 }
 document.getElementById('parcours-select').addEventListener('change', async e=>{
   const id = e.target.value;
   if(id){ await selectParcours(id); }
+});
+document.getElementById('btn-rename-parcours').addEventListener('click', async ()=>{
+  const msgEl = document.getElementById('parcours-msg');
+  if(!currentParcoursId){ msgEl.innerHTML = '<div class="msg msg-error">Sélectionnez d\u2019abord un parcours.</div>'; return; }
+  const newName = document.getElementById('rename-parcours-input').value.trim();
+  if(!newName){ msgEl.innerHTML = '<div class="msg msg-error">Le nom ne peut pas être vide.</div>'; return; }
+  const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
+  if(entry) entry.name = newName;
+  await sbSet('parcours-index', parcoursIndex);
+  msgEl.innerHTML = '<div class="msg msg-success">Parcours renommé.</div>';
+  renderParcoursSelect();
 });
 document.getElementById('btn-create-parcours').addEventListener('click', async ()=>{
   const name = document.getElementById('new-parcours-name').value.trim();
@@ -321,6 +339,7 @@ document.getElementById('btn-create-parcours').addEventListener('click', async (
   await selectParcours(id);
 });
 async function selectParcours(id){
+  if(typeof cancelEdit === 'function') cancelEdit();
   currentParcoursId = id;
   localStorage.setItem('last-parcours', id);
   const data = await sbGet(parcoursKey(id));
@@ -452,6 +471,65 @@ document.getElementById('new-isstart').addEventListener('change', e=>{
   document.getElementById('taille-mode-fields').style.display = e.target.checked ? 'none' : 'block';
 });
 
+let editingId = null;
+function startEdit(id){
+  const b = balises.list.find(x=>x.id===id);
+  if(!b) return;
+  editingId = id;
+  document.getElementById('new-name').value = b.name;
+  document.getElementById('new-lat').value = b.lat;
+  document.getElementById('new-lon').value = b.lon;
+  document.getElementById('new-desc').value = b.description || '';
+  document.getElementById('new-isstart').checked = !!b.isStart;
+  document.getElementById('new-isfake').checked = !!b.isFake;
+  const tailles = b.tailles || ['petit','moyen','grand'];
+  document.getElementById('new-t-petit').checked = tailles.includes('petit');
+  document.getElementById('new-t-moyen').checked = tailles.includes('moyen');
+  document.getElementById('new-t-grand').checked = tailles.includes('grand');
+  const modes = b.modes || ['velo','rando','course'];
+  document.getElementById('new-m-velo').checked = modes.includes('velo');
+  document.getElementById('new-m-rando').checked = modes.includes('rando');
+  document.getElementById('new-m-course').checked = modes.includes('course');
+  document.getElementById('taille-mode-fields').style.display = b.isStart ? 'none' : 'block';
+  if(b.photo){
+    pendingPhoto = b.photo;
+    document.getElementById('photo-preview-img').src = b.photo;
+    document.getElementById('photo-preview').style.display = 'block';
+  } else {
+    pendingPhoto = null;
+    document.getElementById('photo-preview').style.display = 'none';
+  }
+  document.getElementById('new-photo').value = '';
+  document.getElementById('btn-add-balise').textContent = 'Enregistrer les modifications';
+  document.getElementById('btn-cancel-edit').style.display = 'block';
+  placePreview(b.lat, b.lon);
+  if(adminMap) adminMap.setView([b.lat, b.lon], 18);
+  document.getElementById('new-name').scrollIntoView({behavior:'smooth', block:'center'});
+}
+function cancelEdit(){
+  editingId = null;
+  document.getElementById('new-name').value = '';
+  document.getElementById('new-lat').value = '';
+  document.getElementById('new-lon').value = '';
+  document.getElementById('new-desc').value = '';
+  document.getElementById('new-photo').value = '';
+  document.getElementById('photo-preview').style.display = 'none';
+  pendingPhoto = null;
+  document.getElementById('new-isstart').checked = false;
+  document.getElementById('new-isfake').checked = false;
+  document.getElementById('new-t-petit').checked = true;
+  document.getElementById('new-t-moyen').checked = true;
+  document.getElementById('new-t-grand').checked = true;
+  document.getElementById('new-m-velo').checked = true;
+  document.getElementById('new-m-rando').checked = true;
+  document.getElementById('new-m-course').checked = true;
+  document.getElementById('taille-mode-fields').style.display = 'block';
+  document.getElementById('btn-add-balise').textContent = 'Ajouter la balise';
+  document.getElementById('btn-cancel-edit').style.display = 'none';
+  if(previewMarker){ adminMap.removeLayer(previewMarker); previewMarker=null; }
+}
+document.getElementById('btn-cancel-edit').addEventListener('click', cancelEdit);
+
 document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
   const name = document.getElementById('new-name').value.trim();
   const lat = parseFloat(document.getElementById('new-lat').value);
@@ -476,6 +554,20 @@ document.getElementById('btn-add-balise').addEventListener('click', async ()=>{
     msgEl.innerHTML = '<div class="msg msg-error">Une balise ne peut pas être à la fois le Départ et un piège.</div>';
     return;
   }
+
+  if(editingId){
+    const b = balises.list.find(x=>x.id===editingId);
+    if(!b){ cancelEdit(); return; }
+    if(isStart) balises.list.forEach(x=>{ if(x.id!==editingId) x.isStart=false; });
+    Object.assign(b, { name, lat, lon, isStart, isFake, description: desc, photo: pendingPhoto, tailles, modes });
+    msgEl.innerHTML = '<div class="msg msg-success">Balise modifiée.</div>';
+    await saveBalises();
+    cancelEdit();
+    renderBaliseList();
+    refreshAdminMarkers();
+    return;
+  }
+
   if(isStart) balises.list.forEach(b=>b.isStart=false);
   balises.list.push({ id: uid(), name, lat, lon, isStart, isFake, description: desc, photo: pendingPhoto, tailles, modes });
   msgEl.innerHTML = '<div class="msg msg-success">Balise ajoutée.</div>';
@@ -516,10 +608,15 @@ function renderBaliseList(){
         ${b.description ? `<div class="desc">${escapeHtml(b.description)}</div>` : ''}
         ${b.photo ? `<img src="${b.photo}" style="max-width:80px; border-radius:6px; margin-top:4px; display:block;">` : ''}
       </div>
-      <button class="icon-btn" data-del="${b.id}" title="Supprimer">✕</button>
+      <div style="display:flex; flex-direction:column; gap:2px;">
+        <button class="icon-btn" data-edit="${b.id}" title="Modifier" style="color:var(--forest);">✎</button>
+        <button class="icon-btn" data-del="${b.id}" title="Supprimer">✕</button>
+      </div>
     </div>`).join('');
+  el.querySelectorAll('[data-edit]').forEach(btn=> btn.addEventListener('click', ()=> startEdit(btn.dataset.edit)));
   el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
     balises.list = balises.list.filter(x=>x.id!==btn.dataset.del);
+    if(editingId===btn.dataset.del) cancelEdit();
     await saveBalises();
     renderBaliseList();
     refreshAdminMarkers();
@@ -647,7 +744,7 @@ document.getElementById('btn-reset-classement').addEventListener('click', async 
 });
 document.getElementById('btn-reset-balises').addEventListener('click', async ()=>{
   if(confirm('Effacer toutes les balises de ce parcours ?')){
-    balises.list = []; await saveBalises(); renderBaliseList(); refreshAdminMarkers();
+    balises.list = []; await saveBalises(); cancelEdit(); renderBaliseList(); refreshAdminMarkers();
   }
 });
 document.getElementById('btn-refresh-rank').addEventListener('click', async ()=>{
