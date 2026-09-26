@@ -197,7 +197,7 @@
       <div class="card">
         <h2>QR code d'accès à l'application</h2>
         <p class="hint">Génère un QR code qui ouvre la page « Coureur » — à afficher au point de Départ.</p>
-        <div class="field"><label>Lien de la page Coureur (une fois publiée)</label><input type="text" id="app-url" placeholder="https://tamanieux.github.io/course-orientation/course-coureur.html"></div>
+        <div class="field"><label>Lien de la page Coureur (une fois publiée)</label><input type="text" id="app-url" placeholder="https://votre-pseudo.github.io/votre-repo/course-coureur.html"></div>
         <button class="btn btn-secondary" id="btn-print-app-qr">🖨️ Générer et imprimer ce QR code</button>
       </div>
 
@@ -224,7 +224,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -659,20 +659,25 @@ document.getElementById('btn-print-overview-map').addEventListener('click', ()=>
   printMapLayer.clearLayers();
 
   const pts = balises.list.map(b=>[b.lat, b.lon]);
-  balises.list.forEach(b=>{
+  const dirs = [
+    {direction:'right', offset:[8,0]}, {direction:'top', offset:[0,-8]},
+    {direction:'left', offset:[-8,0]}, {direction:'bottom', offset:[0,8]}
+  ];
+  balises.list.forEach((b,i)=>{
     let icon, tooltipText;
     if(b.isStart){
-      icon = L.divIcon({className:'', html:'<div style="font-size:28px; line-height:1; color:#000;">★</div>', iconSize:[28,28], iconAnchor:[14,14]});
+      icon = L.divIcon({className:'', html:'<div style="font-size:20px; line-height:1; color:#000;">★</div>', iconSize:[20,20], iconAnchor:[10,10]});
       tooltipText = `${b.name} (Départ/Arrivée)`;
     } else if(b.isFake){
-      icon = L.divIcon({className:'', html:'<div style="font-size:22px; line-height:1; color:#000; font-weight:bold;">✕</div>', iconSize:[22,22], iconAnchor:[11,11]});
+      icon = L.divIcon({className:'', html:'<div style="font-size:16px; line-height:1; color:#000; font-weight:bold;">✕</div>', iconSize:[16,16], iconAnchor:[8,8]});
       tooltipText = `${b.name} (piège)`;
     } else {
       const letters = (b.tailles||[]).map(t=>({petit:'P',moyen:'M',grand:'G'}[t])).join('');
-      icon = L.divIcon({className:'', html:`<div style="width:22px;height:22px;border-radius:50%;background:#fff;border:2px solid #000;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:bold;color:#000;font-family:sans-serif;">${letters}</div>`, iconSize:[22,22], iconAnchor:[11,11]});
+      icon = L.divIcon({className:'', html:`<div style="width:15px;height:15px;border-radius:50%;background:#fff;border:1.5px solid #000;display:flex;align-items:center;justify-content:center;font-size:7px;font-weight:bold;color:#000;font-family:sans-serif;">${letters}</div>`, iconSize:[15,15], iconAnchor:[7,7]});
       tooltipText = b.name;
     }
-    L.marker([b.lat,b.lon], {icon}).addTo(printMapLayer).bindTooltip(tooltipText, {permanent:true, direction:'right', offset:[10,0], className:'print-map-label'});
+    const d = dirs[i % dirs.length];
+    L.marker([b.lat,b.lon], {icon}).addTo(printMapLayer).bindTooltip(tooltipText, {permanent:true, direction:d.direction, offset:d.offset, className:'print-map-label'});
   });
 
   setPrintOrientation('landscape');
@@ -686,13 +691,12 @@ document.getElementById('btn-print-overview-map').addEventListener('click', ()=>
 
 
 document.getElementById('btn-print').addEventListener('click', ()=>{
-  const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/\$/,'');
+  const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/$/,'');
   if(!appUrl){
     alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. Impression avec un code simple pour cette fois.");
   }
   const sheet = document.getElementById('print-sheet');
   sheet.innerHTML = '';
-  
   balises.list.forEach(b=>{
     const card = document.createElement('div');
     card.className = 'print-card';
@@ -706,29 +710,12 @@ document.getElementById('btn-print').addEventListener('click', ()=>{
     code.textContent = 'Code : ' + b.id;
     card.appendChild(code);
     sheet.appendChild(card);
-    
     const qrContent = appUrl ? `${appUrl}?bal=${b.id}&pc=${currentParcoursId}` : ('BAL:'+b.id);
-    
-    // 1. Génération du QR Code
     new QRCode(qrDiv, { text: qrContent, width: 120, height: 120 });
-
-    // 2. CORRECTION : Conversion immédiate du canvas en image imprimable
-    const canvas = qrDiv.querySelector('canvas');
-    if (canvas) {
-      const img = document.createElement('img');
-      img.src = canvas.toDataURL('image/png');
-      img.style.width = '120px';
-      img.style.height = '120px';
-      qrDiv.appendChild(img);    // On ajoute l'image au conteneur
-      canvas.style.display = 'none'; // On cache le canvas qui ne s'imprime pas
-    }
   });
-
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 500); // 3000ms n'est plus nécessaire, 500ms suffisent largement maintenant
+  setTimeout(()=>window.print(), 300);
 });
-
-
 
 document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
 document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
@@ -752,7 +739,7 @@ document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
   sheet.appendChild(card);
   new QRCode(qrDiv, { text: url, width: 220, height: 220 });
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 3000);
+  setTimeout(()=>window.print(), 300);
 });
 
 document.getElementById('btn-reset-classement').addEventListener('click', async ()=>{
