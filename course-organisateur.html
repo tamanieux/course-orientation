@@ -246,7 +246,7 @@ async function sbGet(key){
     });
     if(!res.ok) return null;
     const rows = await res.json();
-    return rows.length ? ros[0].value : null;
+    return rows.length ? rows[0].value : null;
   }catch(e){ console.error(e); return null; }
 }
 async function sbSet(key, value){
