@@ -709,7 +709,7 @@ document.getElementById('btn-print').addEventListener('click', ()=>{
     new QRCode(qrDiv, { text: qrContent, width: 120, height: 120 });
   });
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 300);
+  setTimeout(()=>window.print(), 3000);
 });
 
 document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
@@ -734,7 +734,7 @@ document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
   sheet.appendChild(card);
   new QRCode(qrDiv, { text: url, width: 220, height: 220 });
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 300);
+  setTimeout(()=>window.print(), 3000);
 });
 
 document.getElementById('btn-reset-classement').addEventListener('click', async ()=>{
