@@ -745,22 +745,26 @@ function renderClassementScreen(){
     return `<button data-p="${p.id}" class="${p.id===rankParcoursId?'active':''} ${ready?'':'not-ready'}">${escapeHtml(p.name)}</button>`;
   }).join('');
 
+  const rankReadiness = setupReadinessCache[rankParcoursId];
+  const rankModeReady = m => !rankReadiness || rankReadiness.modes.has(m);
+  const rankTailleReady = t => !rankReadiness || rankReadiness.tailles.has(t);
+
   const cached = rankClassementCache[rankParcoursId];
   if(!cached){ ensureRankClassement(rankParcoursId).then(()=>renderClassementScreen()); }
   const rows = (cached||[]).filter(r=>r.mode===selectedRankMode && (r.taille||'grand')===selectedRankTaille).sort((a,b)=>a.seconds-b.seconds);
 
   el.innerHTML = `
     <div class="mode-tabs">${parcoursButtons}</div>
-    <div class="mode-tabs">${MODES.map(m=>`<button data-m="${m.id}" class="${selectedRankMode===m.id?'active':''}">${m.icon} ${m.label}</button>`).join('')}</div>
-    <div class="mode-tabs">${TAILLES.map(t=>`<button data-t="${t.id}" class="${selectedRankTaille===t.id?'active':''}">${t.icon} ${t.label}</button>`).join('')}</div>
+    <div class="mode-tabs">${MODES.map(m=>`<button data-m="${m.id}" class="${selectedRankMode===m.id?'active':''} ${rankModeReady(m.id)?'':'not-ready'}">${m.icon} ${m.label}</button>`).join('')}</div>
+    <div class="mode-tabs">${TAILLES.map(t=>`<button data-t="${t.id}" class="${selectedRankTaille===t.id?'active':''} ${rankTailleReady(t.id)?'':'not-ready'}">${t.icon} ${t.label}</button>`).join('')}</div>
     <div class="card">
       ${!cached ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Chargement…</p>` : (rows.length===0 ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Aucun temps enregistré pour cette combinaison.</p>` : `
       <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Fautes</th><th style="text-align:right;">Temps</th></tr></thead>
       <tbody>${rows.map((r,i)=>`<tr><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
     </div>`;
   el.querySelectorAll('.mode-tabs button[data-p]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ rankParcoursId=b.dataset.p; renderClassementScreen(); }) );
-  el.querySelectorAll('.mode-tabs button[data-m]').forEach(b=> b.addEventListener('click', ()=>{ selectedRankMode=b.dataset.m; renderClassementScreen(); }) );
-  el.querySelectorAll('.mode-tabs button[data-t]').forEach(b=> b.addEventListener('click', ()=>{ selectedRankTaille=b.dataset.t; renderClassementScreen(); }) );
+  el.querySelectorAll('.mode-tabs button[data-m]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedRankMode=b.dataset.m; renderClassementScreen(); }) );
+  el.querySelectorAll('.mode-tabs button[data-t]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedRankTaille=b.dataset.t; renderClassementScreen(); }) );
 }
 
 // ---------- boot ----------
