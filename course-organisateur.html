@@ -185,7 +185,7 @@
       <div class="card">
         <h2>Fiches à imprimer</h2>
         <p class="hint">Une fiche par balise avec son QR code et son code de secours. Les fausses balises ne sont pas signalées sur la fiche — c'est le but.</p>
-        <button class="btn btn-secondary" id="btn-print">🖨️ Générer les fiches à imprimer</button>
+        <button class="btn btn-secondary" id="btn-print">⬇️ Télécharger le PDF des fiches</button>
       </div>
 
       <div class="card">
@@ -198,7 +198,7 @@
         <h2>QR code d'accès à l'application</h2>
         <p class="hint">Génère un QR code qui ouvre la page « Coureur » — à afficher au point de Départ.</p>
         <div class="field"><label>Lien de la page Coureur (une fois publiée)</label><input type="text" id="app-url" placeholder="https://votre-pseudo.github.io/votre-repo/course-coureur.html"></div>
-        <button class="btn btn-secondary" id="btn-print-app-qr">🖨️ Générer et imprimer ce QR code</button>
+        <button class="btn btn-secondary" id="btn-print-app-qr">⬇️ Télécharger le PDF de ce QR code</button>
       </div>
 
       <div class="card">
@@ -225,6 +225,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -691,31 +692,44 @@ document.getElementById('btn-print-overview-map').addEventListener('click', ()=>
 
 
 document.getElementById('btn-print').addEventListener('click', async ()=>{
+  if(balises.list.length===0){ alert("Ajoutez d'abord au moins une balise."); return; }
   const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/$/,'');
   if(!appUrl){
-    alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. Impression avec un code simple pour cette fois.");
+    alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. PDF avec un code simple pour cette fois.");
   }
-  const sheet = document.getElementById('print-sheet');
-  sheet.innerHTML = '';
-  const jobs = balises.list.map(async b=>{
-    const card = document.createElement('div');
-    card.className = 'print-card';
-    const img = document.createElement('img');
-    card.appendChild(img);
-    const h = document.createElement('h3');
-    h.textContent = b.name + (b.isStart ? ' (Départ / Arrivée)' : '');
-    card.appendChild(h);
-    const code = document.createElement('div');
-    code.className = 'print-code';
-    code.textContent = 'Code : ' + b.id;
-    card.appendChild(code);
-    sheet.appendChild(card);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const pageW = 210, pageH = 297, margin = 8;
+  const cols = 3, rows = 4;
+  const cellW = (pageW - margin*2) / cols, cellH = (pageH - margin*2) / rows;
+
+  for(let i=0; i<balises.list.length; i++){
+    const b = balises.list[i];
+    const perPage = cols*rows;
+    const posInPage = i % perPage;
+    if(i>0 && posInPage===0) doc.addPage();
+    const col = posInPage % cols, row = Math.floor(posInPage/cols);
+    const x = margin + col*cellW, y = margin + row*cellH;
+
+    doc.setDrawColor(150); doc.setLineDashPattern([1,1], 0);
+    doc.rect(x+2, y+2, cellW-4, cellH-4);
+    doc.setLineDashPattern([], 0);
+
     const qrContent = appUrl ? `${appUrl}?bal=${b.id}&pc=${currentParcoursId}` : ('BAL:'+b.id);
-    try{ img.src = await QRCode.toDataURL(qrContent, { width: 240, margin: 1 }); }catch(e){ console.error('QR generation failed', e); }
-  });
-  await Promise.all(jobs);
-  setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 200);
+    let qrDataUrl;
+    try{ qrDataUrl = await QRCode.toDataURL(qrContent, { width: 300, margin: 1 }); }catch(e){ console.error('QR generation failed', e); continue; }
+    const qrSize = Math.min(cellW, cellH) * 0.55;
+    doc.addImage(qrDataUrl, 'PNG', x + (cellW-qrSize)/2, y + 4, qrSize, qrSize);
+
+    doc.setFontSize(9); doc.setFont(undefined, 'bold');
+    const title = b.name + (b.isStart ? ' (Départ/Arrivée)' : '');
+    const titleLines = doc.splitTextToSize(title, cellW-6);
+    doc.text(titleLines, x + cellW/2, y + qrSize + 9, { align:'center' });
+
+    doc.setFontSize(8); doc.setFont(undefined, 'normal');
+    doc.text('Code : ' + b.id, x + cellW/2, y + cellH - 4, { align:'center' });
+  }
+  doc.save('balises-qr.pdf');
 });
 
 document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
@@ -723,24 +737,20 @@ document.getElementById('btn-print-app-qr').addEventListener('click', async ()=>
   const url = document.getElementById('app-url').value.trim();
   if(!url){ alert("Renseignez d'abord le lien de la page Coureur."); return; }
   localStorage.setItem('app-url', url);
-  const sheet = document.getElementById('print-sheet');
-  sheet.innerHTML = '';
-  const card = document.createElement('div');
-  card.className = 'print-card print-card-full';
-  const img = document.createElement('img');
-  card.appendChild(img);
-  const h = document.createElement('h3');
-  h.textContent = 'Rejoindre la course';
-  card.appendChild(h);
-  const link = document.createElement('div');
-  link.style.fontSize = '13px';
-  link.style.wordBreak = 'break-all';
-  link.textContent = url;
-  card.appendChild(link);
-  sheet.appendChild(card);
-  try{ img.src = await QRCode.toDataURL(url, { width: 440, margin: 1 }); }catch(e){ console.error('QR generation failed', e); }
-  setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 200);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const pageW = 210;
+  let qrDataUrl;
+  try{ qrDataUrl = await QRCode.toDataURL(url, { width: 600, margin: 1 }); }
+  catch(e){ console.error('QR generation failed', e); alert("La génération du QR a échoué, réessayez."); return; }
+  doc.setFontSize(20); doc.setFont(undefined, 'bold');
+  doc.text('Rejoindre la course', pageW/2, 30, { align:'center' });
+  const qrSize = 120;
+  doc.addImage(qrDataUrl, 'PNG', (pageW-qrSize)/2, 45, qrSize, qrSize);
+  doc.setFontSize(11); doc.setFont(undefined, 'normal');
+  const urlLines = doc.splitTextToSize(url, pageW-40);
+  doc.text(urlLines, pageW/2, 45+qrSize+12, { align:'center' });
+  doc.save('acces-application.pdf');
 });
 
 document.getElementById('btn-reset-classement').addEventListener('click', async ()=>{
