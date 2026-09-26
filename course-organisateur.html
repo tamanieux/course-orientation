@@ -224,7 +224,7 @@
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
 <script>
 (function(){
 "use strict";
@@ -690,18 +690,18 @@ document.getElementById('btn-print-overview-map').addEventListener('click', ()=>
 });
 
 
-document.getElementById('btn-print').addEventListener('click', ()=>{
+document.getElementById('btn-print').addEventListener('click', async ()=>{
   const appUrl = (localStorage.getItem('app-url') || document.getElementById('app-url').value.trim()).replace(/\/$/,'');
   if(!appUrl){
     alert("Conseil : renseignez d'abord le lien de la page Coureur ci-dessous (\"QR code d'accès à l'application\") pour que les QR des balises expliquent directement le jeu à qui les scanne, même sans l'appli. Impression avec un code simple pour cette fois.");
   }
   const sheet = document.getElementById('print-sheet');
   sheet.innerHTML = '';
-  balises.list.forEach(b=>{
+  const jobs = balises.list.map(async b=>{
     const card = document.createElement('div');
     card.className = 'print-card';
-    const qrDiv = document.createElement('div');
-    card.appendChild(qrDiv);
+    const img = document.createElement('img');
+    card.appendChild(img);
     const h = document.createElement('h3');
     h.textContent = b.name + (b.isStart ? ' (Départ / Arrivée)' : '');
     card.appendChild(h);
@@ -711,14 +711,15 @@ document.getElementById('btn-print').addEventListener('click', ()=>{
     card.appendChild(code);
     sheet.appendChild(card);
     const qrContent = appUrl ? `${appUrl}?bal=${b.id}&pc=${currentParcoursId}` : ('BAL:'+b.id);
-    new QRCode(qrDiv, { text: qrContent, width: 120, height: 120 });
+    try{ img.src = await QRCode.toDataURL(qrContent, { width: 240, margin: 1 }); }catch(e){ console.error('QR generation failed', e); }
   });
+  await Promise.all(jobs);
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 300);
+  setTimeout(()=>window.print(), 200);
 });
 
 document.getElementById('app-url').value = localStorage.getItem('app-url') || '';
-document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
+document.getElementById('btn-print-app-qr').addEventListener('click', async ()=>{
   const url = document.getElementById('app-url').value.trim();
   if(!url){ alert("Renseignez d'abord le lien de la page Coureur."); return; }
   localStorage.setItem('app-url', url);
@@ -726,8 +727,8 @@ document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
   sheet.innerHTML = '';
   const card = document.createElement('div');
   card.className = 'print-card print-card-full';
-  const qrDiv = document.createElement('div');
-  card.appendChild(qrDiv);
+  const img = document.createElement('img');
+  card.appendChild(img);
   const h = document.createElement('h3');
   h.textContent = 'Rejoindre la course';
   card.appendChild(h);
@@ -737,9 +738,9 @@ document.getElementById('btn-print-app-qr').addEventListener('click', ()=>{
   link.textContent = url;
   card.appendChild(link);
   sheet.appendChild(card);
-  new QRCode(qrDiv, { text: url, width: 220, height: 220 });
+  try{ img.src = await QRCode.toDataURL(url, { width: 440, margin: 1 }); }catch(e){ console.error('QR generation failed', e); }
   setPrintOrientation('portrait');
-  setTimeout(()=>window.print(), 300);
+  setTimeout(()=>window.print(), 200);
 });
 
 document.getElementById('btn-reset-classement').addEventListener('click', async ()=>{
