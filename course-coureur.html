@@ -510,6 +510,17 @@ function renderPlayScreen(){
     return;
   }
 
+  function buildClassementRecord(extra){
+    const foundIds = others.filter(o=>activeRun.visited[o.id]).map(o=>o.id);
+    const missedIds = others.filter(o=>!activeRun.visited[o.id]).map(o=>o.id);
+    return Object.assign({
+      name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille,
+      seconds: (activeRun.finishedAt-activeRun.startedAt)/1000,
+      trapFaults: activeRun.faults||0,
+      found: foundIds.length, total: others.length, missedIds,
+      date: new Date().toISOString()
+    }, extra||{});
+  }
   window.abandonRun = function(){
     if(!confirm("Abandonner cette course ? Aucun temps ne sera enregistré.")) return;
     stopProximityWatch();
@@ -521,7 +532,7 @@ function renderPlayScreen(){
     activeRun.finished = true;
     activeRun.finishedAt = Date.now();
     activeRun.incomplete = true;
-    classement.push({ name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille, seconds: (activeRun.finishedAt-activeRun.startedAt)/1000, faults: activeRun.faults||0, incomplete:true, date: new Date().toISOString() });
+    classement.push(buildClassementRecord({incomplete:true}));
     await saveClassement();
     persistActiveRun();
     stopProximityWatch();
@@ -547,7 +558,7 @@ function renderPlayScreen(){
     document.getElementById('btn-do-finish').addEventListener('click', async ()=>{
       activeRun.finished = true;
       activeRun.finishedAt = Date.now();
-      classement.push({ name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille, seconds: (activeRun.finishedAt-activeRun.startedAt)/1000, faults: activeRun.faults||0, date: new Date().toISOString() });
+      classement.push(buildClassementRecord());
       await saveClassement();
       persistActiveRun();
       stopProximityWatch();
