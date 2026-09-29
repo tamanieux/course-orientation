@@ -127,6 +127,7 @@
           <div class="field"><label>Rayon Départ (m)</label><input type="number" id="start-radius-input" min="3" max="100"></div>
         </div>
         <div class="field"><label>Précision GPS max exigée au Départ (m)</label><input type="number" id="acc-input" min="5" max="100"></div>
+        <div class="chk"><input type="checkbox" id="ordered-mode-input"><label for="ordered-mode-input">Obliger les coureurs à trouver les balises dans l'ordre où elles sont listées ci-dessous (utilisez les flèches ▲▼ pour définir cet ordre)</label></div>
         <button class="btn btn-outline" id="btn-save-settings">Enregistrer les réglages</button>
       </div>
 
@@ -2632,7 +2633,7 @@ document.getElementById('btn-create-parcours').addEventListener('click', async (
   const id = uid();
   parcoursIndex.push({id, name});
   await sbSet('parcours-index', parcoursIndex);
-  await sbSet(parcoursKey(id), { radius:30, startRadius:15, startAccuracy:25, list:[] });
+  await sbSet(parcoursKey(id), { radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false });
   document.getElementById('new-parcours-name').value = '';
   msgEl.innerHTML = '<div class="msg msg-success">Parcours créé.</div>';
   renderParcoursSelect();
@@ -2643,7 +2644,7 @@ async function selectParcours(id){
   currentParcoursId = id;
   localStorage.setItem('last-parcours', id);
   const data = await sbGet(parcoursKey(id));
-  balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[] }, data || {});
+  balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false }, data || {});
   const c = await sbGet(classementKey(id));
   classement = Array.isArray(c) ? c : [];
   document.getElementById('parcours-content').style.display = 'block';
@@ -2700,6 +2701,7 @@ function fillSettingsInputs(){
   document.getElementById('radius-input').value = balises.radius;
   document.getElementById('start-radius-input').value = balises.startRadius;
   document.getElementById('acc-input').value = balises.startAccuracy;
+  document.getElementById('ordered-mode-input').checked = !!balises.orderedMode;
 }
 document.getElementById('btn-save-settings').addEventListener('click', async ()=>{
   const r = parseInt(document.getElementById('radius-input').value,10);
@@ -2708,6 +2710,7 @@ document.getElementById('btn-save-settings').addEventListener('click', async ()=
   if(r>0) balises.radius = r;
   if(sr>0) balises.startRadius = sr;
   if(acc>0) balises.startAccuracy = acc;
+  balises.orderedMode = document.getElementById('ordered-mode-input').checked;
   await saveBalises();
 });
 
@@ -2897,10 +2900,14 @@ function renderBaliseList(){
   document.getElementById('balise-count').textContent = `Balises du parcours (${balises.list.length})`;
   const el = document.getElementById('balise-list');
   if(balises.list.length===0){ el.innerHTML = '<p class="hint">Aucune balise pour l\u2019instant.</p>'; return; }
-  el.innerHTML = balises.list.map(b=>`
+  el.innerHTML = balises.list.map((b,i)=>`
     <div class="balise-row">
+      <div style="display:flex; flex-direction:column; gap:1px; margin-right:2px;">
+        <button class="icon-btn" data-up="${b.id}" title="Monter" ${i===0?'disabled style="opacity:.25;"':''} style="color:var(--forest);">▲</button>
+        <button class="icon-btn" data-down="${b.id}" title="Descendre" ${i===balises.list.length-1?'disabled style="opacity:.25;"':''} style="color:var(--forest);">▼</button>
+      </div>
       <div class="info">
-        <div class="nm">${escapeHtml(b.name)}${b.isStart?'<span class="tag tag-start">DÉPART</span>':''}${b.isFake?'<span class="tag tag-fake">PIÈGE</span>':''}
+        <div class="nm">${!b.isStart && !b.isFake ? `<span style="color:var(--forest-light); font-weight:400;">#${i+1}</span> ` : ''}${escapeHtml(b.name)}${b.isStart?'<span class="tag tag-start">DÉPART</span>':''}${b.isFake?'<span class="tag tag-fake">PIÈGE</span>':''}
           ${!b.isStart && !b.isFake ? (b.tailles||[]).map(t=>`<span class="tag tag-taille">${TAILLE_LABELS[t]}</span>`).join('') : ''}
           ${!b.isStart && !b.isFake ? (b.modes||[]).map(m=>`<span class="tag tag-mode">${MODE_LABELS[m]}</span>`).join('') : ''}
         </div>
@@ -2913,6 +2920,14 @@ function renderBaliseList(){
         <button class="icon-btn" data-del="${b.id}" title="Supprimer">✕</button>
       </div>
     </div>`).join('');
+  el.querySelectorAll('[data-up]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const i = balises.list.findIndex(x=>x.id===btn.dataset.up);
+    if(i>0){ [balises.list[i-1], balises.list[i]] = [balises.list[i], balises.list[i-1]]; await saveBalises(); renderBaliseList(); }
+  }));
+  el.querySelectorAll('[data-down]').forEach(btn=> btn.addEventListener('click', async ()=>{
+    const i = balises.list.findIndex(x=>x.id===btn.dataset.down);
+    if(i<balises.list.length-1){ [balises.list[i+1], balises.list[i]] = [balises.list[i], balises.list[i+1]]; await saveBalises(); renderBaliseList(); }
+  }));
   el.querySelectorAll('[data-edit]').forEach(btn=> btn.addEventListener('click', ()=> startEdit(btn.dataset.edit)));
   el.querySelectorAll('[data-del]').forEach(btn=> btn.addEventListener('click', async ()=>{
     balises.list = balises.list.filter(x=>x.id!==btn.dataset.del);

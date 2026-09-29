@@ -254,7 +254,7 @@ function classementKey(id){ return 'classement-'+id; }
 async function loadParcoursIndex(){ const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : []; }
 async function loadParcoursData(id){
   const data = await sbGet(parcoursKey(id));
-  balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[] }, data || {});
+  balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false }, data || {});
   const c = await sbGet(classementKey(id));
   classement = Array.isArray(c) ? c : [];
 }
@@ -569,7 +569,8 @@ function renderPlayScreen(){
         <button class="btn btn-outline" id="btn-take-photo" style="margin-top:10px;">📷 ${capturedPhotoUrl?'Reprendre la photo':'Prendre une photo souvenir'}</button>
       </div>` : (playMsg ? `<div class="msg ${playMsg.ok?'msg-success':'msg-error'}">${playMsg.text}</div>` : '')}
       <div class="balise-list">
-        ${others.map(b=>`<div class="balise-item ${activeRun.visited[b.id]?'done':''}"><span class="dot"></span><span class="name">${escapeHtml(b.name)}</span>${activeRun.visited[b.id]?'<span class="tag">✓</span>':''}</div>`).join('')}
+        ${(()=>{ const nextExpected = balises.orderedMode ? others.find(o=>!activeRun.visited[o.id]) : null;
+          return others.map(b=>`<div class="balise-item ${activeRun.visited[b.id]?'done':''}"><span class="dot"></span><span class="name">${escapeHtml(b.name)}</span>${activeRun.visited[b.id]?'<span class="tag">✓</span>':(nextExpected && nextExpected.id===b.id?'<span class="tag" style="background:var(--gold);">À trouver</span>':'')}</div>`).join(''); })()}
       </div>
       <button class="btn btn-primary" id="btn-scan-any">📡 Scanner une balise</button>
       <div style="height:8px;"></div>
@@ -643,6 +644,13 @@ async function handleScan(rawCode){
   const others = othersFor(activeRun.taille, activeRun.mode);
   if(!others.find(o=>o.id===bal.id)){ setScannerError(`"${bal.name}" ne fait pas partie de ce parcours (${MODES.find(m=>m.id===activeRun.mode).label} / ${TAILLES.find(t=>t.id===activeRun.taille).label}).`); return; }
   if(activeRun.visited[bal.id]){ setScannerError(`"${bal.name}" est déjà validée.`); return; }
+  if(balises.orderedMode){
+    const nextExpected = others.find(o=>!activeRun.visited[o.id]);
+    if(nextExpected && nextExpected.id!==bal.id){
+      setScannerError(`Ce n'est pas dans l'ordre ! Trouvez d'abord "${nextExpected.name}".`);
+      return;
+    }
+  }
   activeRun.visited[bal.id] = Date.now();
   persistActiveRun();
   closeScanner();
@@ -720,10 +728,17 @@ function startScanLoop(){
   scannerRAF = requestAnimationFrame(tick);
 }
 document.getElementById('btn-scanner-close').addEventListener('click', closeScanner);
-document.getElementById('btn-manual-submit').addEventListener('click', ()=>{
-  const v = document.getElementById('manual-code').value.trim();
-  if(v && scannerOnResult) scannerOnResult(v);
-});
+function submitManualCode(){
+  const raw = document.getElementById('manual-code').value;
+  const v = raw.trim().toUpperCase().replace(/[^A-Z0-9:\/\.\-\?\=\&]/g, '');
+  if(!v){ return; }
+  document.getElementById('scanner-status').style.color = '#fff';
+  document.getElementById('scanner-status').textContent = 'Vérification du code…';
+  document.getElementById('btn-retry-camera').style.display = 'none';
+  if(scannerOnResult) scannerOnResult(v);
+}
+document.getElementById('btn-manual-submit').addEventListener('click', submitManualCode);
+document.getElementById('manual-code').addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); submitManualCode(); } });
 
 // ================= MAP SCREEN =================
 function renderMapScreen(){
