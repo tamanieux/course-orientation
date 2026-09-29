@@ -176,6 +176,7 @@
     <video id="scanner-video" playsinline muted></video>
     <div class="scan-frame"></div>
     <div class="scanner-status" id="scanner-status">Cadrez le QR code de la balise</div>
+    <button class="btn btn-outline" id="btn-retry-camera" style="display:none; width:auto; margin:0 auto 12px; padding:10px 20px; background:#fff; position:relative; z-index:2;" onclick="startCamera()">🔄 Réessayer la caméra</button>
     <div class="manual-entry">
       <div class="field"><label>Ou saisissez le code manuellement</label><input type="text" id="manual-code" placeholder="ex. 7K2P9Q" autocapitalize="characters"></div>
       <button class="btn btn-primary" id="btn-manual-submit">Valider</button>
@@ -190,8 +191,8 @@
 (function(){
 "use strict";
 
-let SUPABASE_URL = "https://ydgihoqtbadjjavvmpuj.supabase.co";
-let SUPABASE_ANON_KEY = "sb_publishable_2pgx8EUInpKFNQ_9sznL0w_W5Q4pSdT";
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 
 const MODES = [
   {id:'velo', label:'Vélo', icon:'🚴'},
@@ -473,12 +474,13 @@ function renderPlayScreen(){
   const others = othersFor(activeRun.taille, activeRun.mode);
 
   if(activeRun.finished){
-    const rank = computeRank(activeRun.mode, activeRun.taille, activeRun.finishedAt - activeRun.startedAt);
+    const rank = activeRun.incomplete ? null : computeRank(activeRun.mode, activeRun.taille, activeRun.finishedAt - activeRun.startedAt);
     el.innerHTML = `
       <div class="card" style="text-align:center;">
-        <h2 style="color:var(--success); margin-top:0;">Arrivée !</h2>
+        <h2 style="color:${activeRun.incomplete?'var(--danger)':'var(--success)'}; margin-top:0;">${activeRun.incomplete?'Course arrêtée':'Arrivée !'}</h2>
         <div class="timer">${formatDuration((activeRun.finishedAt-activeRun.startedAt)/1000)}</div>
         <div class="timer-label">${MODES.find(m=>m.id===activeRun.mode).label} — ${TAILLES.find(t=>t.id===activeRun.taille).label}${activeRun.faults?` · ${activeRun.faults} faute${activeRun.faults>1?'s':''}`:''}</div>
+        ${activeRun.incomplete ? `<div class="msg msg-warn">Enregistrée comme incomplète (parcours non terminé).</div>` : ''}
         ${rank ? `<div class="msg msg-success">Classé(e) ${rank}${rank===1?'er':'e'} sur ce mode/taille.</div>` : ''}
         <button class="btn btn-secondary" id="btn-new-run">Nouvelle course</button>
       </div>`;
@@ -508,6 +510,24 @@ function renderPlayScreen(){
     return;
   }
 
+  window.abandonRun = function(){
+    if(!confirm("Abandonner cette course ? Aucun temps ne sera enregistré.")) return;
+    stopProximityWatch();
+    clearActiveRun();
+    renderPlayScreen();
+  };
+  window.finishNow = async function(){
+    if(!confirm("Terminer la course maintenant ? Le temps sera enregistré comme incomplet (balises manquantes ou retour au Départ non fait).")) return;
+    activeRun.finished = true;
+    activeRun.finishedAt = Date.now();
+    activeRun.incomplete = true;
+    classement.push({ name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille, seconds: (activeRun.finishedAt-activeRun.startedAt)/1000, faults: activeRun.faults||0, incomplete:true, date: new Date().toISOString() });
+    await saveClassement();
+    persistActiveRun();
+    stopProximityWatch();
+    renderPlayScreen();
+  };
+
   const visitedCount = others.filter(b=>activeRun.visited[b.id]).length;
   const allDone = visitedCount === others.length;
 
@@ -519,6 +539,10 @@ function renderPlayScreen(){
         <p style="text-align:center; font-size:14px;">Toutes les balises sont trouvées ! Retournez au point de Départ pour valider votre arrivée.</p>
         <div class="proximity-box"><div class="dist" id="prox-dist">— m</div><div class="lbl">jusqu'à l'Arrivée</div><div class="acc" id="prox-acc"></div></div>
         <button class="btn btn-primary" id="btn-do-finish" disabled>Valider l'arrivée</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-outline" onclick="window.finishNow()">🏁 Terminer maintenant</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-ghost" onclick="window.abandonRun()">Abandonner la course</button>
       </div>`;
     document.getElementById('btn-do-finish').addEventListener('click', async ()=>{
       activeRun.finished = true;
@@ -550,6 +574,10 @@ function renderPlayScreen(){
       <button class="btn btn-primary" id="btn-scan-any">📡 Scanner une balise</button>
       <div style="height:8px;"></div>
       <button class="btn btn-outline" id="btn-goto-map">🗺️ Voir la carte</button>
+      <div style="height:8px;"></div>
+      <button class="btn btn-outline" onclick="window.finishNow()">🏁 Terminer maintenant</button>
+      <div style="height:8px;"></div>
+      <button class="btn btn-ghost" onclick="window.abandonRun()">Abandonner la course</button>
     </div>`;
   document.getElementById('btn-scan-any').addEventListener('click', ()=> openScanner(handleScan, 'Scanner une balise'));
   document.getElementById('btn-goto-map').addEventListener('click', ()=> switchTab('map'));
@@ -638,6 +666,7 @@ function openScanner(onResult, title){
   document.getElementById('scanner-title').textContent = title || 'Scanner une balise';
   document.getElementById('scanner-status').textContent = 'Cadrez le QR code de la balise';
   document.getElementById('scanner-status').style.color = '#fff';
+  document.getElementById('btn-retry-camera').style.display = 'none';
   document.getElementById('manual-code').value = '';
   document.getElementById('scanner-overlay').classList.add('active');
   startCamera();
@@ -645,11 +674,34 @@ function openScanner(onResult, title){
 function closeScanner(){ document.getElementById('scanner-overlay').classList.remove('active'); stopCamera(); }
 async function startCamera(){
   const video = document.getElementById('scanner-video');
+  document.getElementById('btn-retry-camera').style.display = 'none';
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    document.getElementById('scanner-status').textContent = "Ce navigateur ne permet pas d'accéder à la caméra ici. Utilisez la saisie manuelle, ou ouvrez ce lien dans Chrome/Safari (pas dans une appli comme WhatsApp/Messenger/Facebook).";
+    return;
+  }
   try{
-    scannerStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment'}});
-    video.srcObject = scannerStream; await video.play(); startScanLoop();
-  }catch(e){ document.getElementById('scanner-status').textContent = "Caméra indisponible — utilisez la saisie manuelle ci-dessous."; }
+    scannerStream = await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}}});
+  }catch(e1){
+    try{ scannerStream = await navigator.mediaDevices.getUserMedia({video:true}); }
+    catch(e2){
+      let msg = "Caméra indisponible — utilisez la saisie manuelle ci-dessous.";
+      if(e2.name==='NotAllowedError' || e2.name==='PermissionDeniedError'){
+        msg = "Accès à la caméra refusé. Ouvrez les réglages du site (icône 🔒 ou ⓘ à côté de l'adresse) et autorisez la caméra, puis appuyez sur Réessayer.";
+      } else if(e2.name==='NotFoundError' || e2.name==='DevicesNotFoundError'){
+        msg = "Aucune caméra détectée sur cet appareil.";
+      } else if(e2.name==='NotReadableError' || e2.name==='TrackStartError'){
+        msg = "La caméra est peut-être utilisée par une autre application. Fermez-la puis réessayez.";
+      } else if(location.protocol !== 'https:'){
+        msg = "La caméra nécessite une connexion sécurisée (https). Vérifiez l'adresse du site.";
+      }
+      document.getElementById('scanner-status').textContent = msg;
+      document.getElementById('btn-retry-camera').style.display = 'block';
+      return;
+    }
+  }
+  video.srcObject = scannerStream; await video.play(); startScanLoop();
 }
+window.startCamera = startCamera;
 function stopCamera(){ cancelAnimationFrame(scannerRAF); if(scannerStream){ scannerStream.getTracks().forEach(t=>t.stop()); scannerStream=null; } }
 function startScanLoop(){
   const video = document.getElementById('scanner-video');
@@ -694,12 +746,17 @@ function renderMapScreen(){
   const taille = activeRun ? activeRun.taille : null;
   const modeF = activeRun ? activeRun.mode : null;
   const visible = balises.list.filter(b=> !b.isFake && (b.isStart || (!taille || (b.tailles||['petit','moyen','grand']).includes(taille)) && (!modeF || (b.modes||['velo','rando','course']).includes(modeF))));
-  visible.forEach(b=>{
+  const labelDirs = [
+    {direction:'top', offset:[0,-14]}, {direction:'right', offset:[14,0]},
+    {direction:'bottom', offset:[0,14]}, {direction:'left', offset:[-14,0]}
+  ];
+  visible.forEach((b,i)=>{
     const visited = activeRun && activeRun.visited && activeRun.visited[b.id];
     const isStart = b.isStart;
     const color = isStart ? '#E0611E' : (visited ? '#3E7A4C' : '#B08A3E');
     const icon = L.divIcon({className:'', html:`<div style="width:26px;height:26px;border-radius:${isStart?'7px':'50%'};background:${color};border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; font-size:13px;">${isStart?'🏁':'📷'}</div>`, iconSize:[26,26], iconAnchor:[13,13]});
-    const marker = L.marker([b.lat,b.lon], {icon}).addTo(map).bindTooltip(b.name, {permanent:true, direction:'top', offset:[0,-14], className:'coureur-map-label'});
+    const d = labelDirs[i % labelDirs.length];
+    const marker = L.marker([b.lat,b.lon], {icon}).addTo(map).bindTooltip(b.name, {permanent:true, direction:d.direction, offset:d.offset, className:'coureur-map-label'});
     marker.on('click', ()=>{
       if(isStart){ switchTab('play'); }
       else if(!activeRun || !activeRun.startedAt || activeRun.finished){ /* nothing to scan yet */ }
@@ -761,7 +818,7 @@ function renderClassementScreen(){
     <div class="card">
       ${!cached ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Chargement…</p>` : (rows.length===0 ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Aucun temps enregistré pour cette combinaison.</p>` : `
       <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Fautes</th><th style="text-align:right;">Temps</th></tr></thead>
-      <tbody>${rows.map((r,i)=>`<tr><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
+      <tbody>${rows.map((r,i)=>`<tr${r.incomplete?' style="opacity:.55;"':''}><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}${r.incomplete?' <small>(incomplet)</small>':''}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
     </div>`;
   el.querySelectorAll('.mode-tabs button[data-p]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ rankParcoursId=b.dataset.p; renderClassementScreen(); }) );
   el.querySelectorAll('.mode-tabs button[data-m]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedRankMode=b.dataset.m; renderClassementScreen(); }) );
