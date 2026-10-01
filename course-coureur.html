@@ -171,6 +171,17 @@
     </button>
   </nav>
 
+  <div id="missed-map-overlay" style="position:fixed; inset:0; background:rgba(0,0,0,.6); z-index:1100; display:none; align-items:center; justify-content:center; padding:16px;">
+    <div style="background:#fff; border-radius:12px; max-width:520px; width:100%; max-height:85vh; overflow:hidden; display:flex; flex-direction:column;">
+      <div style="display:flex; justify-content:space-between; align-items:center; padding:14px 16px; border-bottom:1.5px solid var(--line);">
+        <h3 id="missed-map-title" style="margin:0; font-size:16px; color:var(--forest);">Balises manquées</h3>
+        <button id="btn-close-missed-map" style="background:none;border:none;font-size:24px;cursor:pointer;color:var(--forest);">&times;</button>
+      </div>
+      <div id="missed-map" style="width:100%; height:360px;"></div>
+      <div id="missed-map-empty" style="padding:24px; text-align:center; font-size:14px; color:var(--forest-light); display:none;"></div>
+    </div>
+  </div>
+
   <div id="scanner-overlay">
     <div class="scanner-head"><h3 id="scanner-title">Scanner une balise</h3><button id="btn-scanner-close">&times;</button></div>
     <video id="scanner-video" playsinline muted></video>
@@ -474,14 +485,18 @@ function renderPlayScreen(){
   const others = othersFor(activeRun.taille, activeRun.mode);
 
   if(activeRun.finished){
-    const rank = activeRun.incomplete ? null : computeRank(activeRun.mode, activeRun.taille, activeRun.finishedAt - activeRun.startedAt);
+    const foundCount = others.filter(o=>activeRun.visited[o.id]).length;
+    const missedCount = others.length - foundCount;
+    const combinedFaults = (activeRun.faults||0) + missedCount;
+    const rank = activeRun.rank;
     el.innerHTML = `
       <div class="card" style="text-align:center;">
         <h2 style="color:${activeRun.incomplete?'var(--danger)':'var(--success)'}; margin-top:0;">${activeRun.incomplete?'Course arrêtée':'Arrivée !'}</h2>
         <div class="timer">${formatDuration((activeRun.finishedAt-activeRun.startedAt)/1000)}</div>
-        <div class="timer-label">${MODES.find(m=>m.id===activeRun.mode).label} — ${TAILLES.find(t=>t.id===activeRun.taille).label}${activeRun.faults?` · ${activeRun.faults} faute${activeRun.faults>1?'s':''}`:''}</div>
+        <div class="timer-label">${MODES.find(m=>m.id===activeRun.mode).label} — ${TAILLES.find(t=>t.id===activeRun.taille).label}</div>
+        <p style="font-size:13.5px; color:var(--forest-light); margin:2px 0 10px;">${foundCount}/${others.length} balises trouvées${combinedFaults?` · ${combinedFaults} faute${combinedFaults>1?'s':''} au total`:''}</p>
         ${activeRun.incomplete ? `<div class="msg msg-warn">Enregistrée comme incomplète (parcours non terminé).</div>` : ''}
-        ${rank ? `<div class="msg msg-success">Classé(e) ${rank}${rank===1?'er':'e'} sur ce mode/taille.</div>` : ''}
+        ${rank ? `<div class="msg msg-success">Classé(e) ${rank}${rank===1?'er':'e'} sur ce mode/taille (temps et fautes combinés).</div>` : ''}
         <button class="btn btn-secondary" id="btn-new-run">Nouvelle course</button>
       </div>`;
     document.getElementById('btn-new-run').addEventListener('click', ()=>{ clearActiveRun(); selectedMode=null; selectedTaille=null; playerNameDraft=''; renderPlayScreen(); });
@@ -532,7 +547,9 @@ function renderPlayScreen(){
     activeRun.finished = true;
     activeRun.finishedAt = Date.now();
     activeRun.incomplete = true;
-    classement.push(buildClassementRecord({incomplete:true}));
+    const rec = buildClassementRecord({incomplete:true});
+    activeRun.rank = computeRank(activeRun.mode, activeRun.taille, rec);
+    classement.push(rec);
     await saveClassement();
     persistActiveRun();
     stopProximityWatch();
@@ -551,20 +568,22 @@ function renderPlayScreen(){
         <div class="proximity-box"><div class="dist" id="prox-dist">— m</div><div class="lbl">jusqu'à l'Arrivée</div><div class="acc" id="prox-acc"></div></div>
         <button class="btn btn-primary" id="btn-do-finish" disabled>Valider l'arrivée</button>
         <div style="height:8px;"></div>
-        <button class="btn btn-outline" onclick="window.finishNow()">🏁 Terminer maintenant</button>
+        <button class="btn btn-outline" id="btn-finish-now" disabled onclick="window.finishNow()">🏁 Terminer maintenant</button>
         <div style="height:8px;"></div>
         <button class="btn btn-ghost" onclick="window.abandonRun()">Abandonner la course</button>
       </div>`;
     document.getElementById('btn-do-finish').addEventListener('click', async ()=>{
       activeRun.finished = true;
       activeRun.finishedAt = Date.now();
-      classement.push(buildClassementRecord());
+      const rec = buildClassementRecord();
+      activeRun.rank = computeRank(activeRun.mode, activeRun.taille, rec);
+      classement.push(rec);
       await saveClassement();
       persistActiveRun();
       stopProximityWatch();
       renderPlayScreen();
     });
-    watchProximityTo(start, balises.startRadius, balises.startAccuracy, 'btn-do-finish');
+    watchProximityTo(start, balises.startRadius, balises.startAccuracy, ['btn-do-finish','btn-finish-now']);
     startLiveTimer();
     return;
   }
@@ -587,7 +606,8 @@ function renderPlayScreen(){
       <div style="height:8px;"></div>
       <button class="btn btn-outline" id="btn-goto-map">🗺️ Voir la carte</button>
       <div style="height:8px;"></div>
-      <button class="btn btn-outline" onclick="window.finishNow()">🏁 Terminer maintenant</button>
+      <p style="font-size:11.5px; color:var(--forest-light); text-align:center; margin:0 0 4px;" id="finish-now-hint">Distance jusqu'au Départ : — m (nécessaire pour "Terminer maintenant")</p>
+      <button class="btn btn-outline" id="btn-finish-now" disabled onclick="window.finishNow()">🏁 Terminer maintenant</button>
       <div style="height:8px;"></div>
       <button class="btn btn-ghost" onclick="window.abandonRun()">Abandonner la course</button>
     </div>`;
@@ -595,6 +615,7 @@ function renderPlayScreen(){
   document.getElementById('btn-goto-map').addEventListener('click', ()=> switchTab('map'));
   const photoBtn = document.getElementById('btn-take-photo');
   if(photoBtn) photoBtn.addEventListener('click', ()=> document.getElementById('rando-photo-input').click());
+  watchProximityTo(start, balises.startRadius, balises.startAccuracy, 'btn-finish-now', 'finish-now-hint');
   startLiveTimer();
 }
 
@@ -607,18 +628,22 @@ document.getElementById('rando-photo-input').addEventListener('change', e=>{
   renderPlayScreen();
 });
 
-function watchProximityTo(target, radius, maxAccuracy, buttonId){
+function watchProximityTo(target, radius, maxAccuracy, buttonIds, hintElId){
   stopProximityWatch();
+  const ids = Array.isArray(buttonIds) ? buttonIds : [buttonIds];
   function update(coords){
     const dist = haversine(coords.latitude, coords.longitude, target.lat, target.lon);
     const acc = coords.accuracy;
     const distEl = document.getElementById('prox-dist');
     const accEl = document.getElementById('prox-acc');
-    const btn = document.getElementById(buttonId);
     if(distEl) distEl.textContent = Math.round(dist)+' m';
     const okDist = dist <= radius, okAcc = acc <= maxAccuracy;
     if(accEl) accEl.textContent = okAcc ? `précision GPS ≈ ${Math.round(acc)} m` : `précision GPS insuffisante (≈ ${Math.round(acc)} m) — patientez`;
-    if(btn) btn.disabled = !(okDist && okAcc);
+    if(hintElId){
+      const hintEl = document.getElementById(hintElId);
+      if(hintEl) hintEl.textContent = `Distance jusqu'au Départ : ${Math.round(dist)} m${okAcc?'':` (précision GPS ≈ ${Math.round(acc)} m)`}`;
+    }
+    ids.forEach(id=>{ const btn = document.getElementById(id); if(btn) btn.disabled = !(okDist && okAcc); });
   }
   if(!navigator.geolocation) return;
   proximityWatchId = navigator.geolocation.watchPosition(pos=>update(pos.coords), ()=>{}, {enableHighAccuracy:true, maximumAge:2000});
@@ -632,9 +657,18 @@ function startLiveTimer(){
   tick();
   liveTimerInt = setInterval(tick, 1000);
 }
-function computeRank(mode, taille, durationMs){
-  const runs = classement.filter(r=>r.mode===mode && (r.taille||'grand')===taille).map(r=>r.seconds).sort((a,b)=>a-b);
-  return runs.filter(s=>s<durationMs/1000).length + 1;
+function totalFaultsOf(r){
+  const missed = (r.total!==undefined && r.found!==undefined) ? Math.max(0, r.total-r.found) : 0;
+  return (r.trapFaults!==undefined ? r.trapFaults : (r.faults||0)) + missed;
+}
+function compareRuns(a,b){
+  const fa = totalFaultsOf(a), fb = totalFaultsOf(b);
+  if(fa!==fb) return fa-fb;
+  return a.seconds-b.seconds;
+}
+function computeRank(mode, taille, myRecord){
+  const runs = classement.filter(r=>r.mode===mode && (r.taille||'grand')===taille);
+  return runs.filter(r=>compareRuns(r, myRecord)<0).length + 1;
 }
 
 async function handleScan(rawCode){
@@ -835,21 +869,59 @@ function renderClassementScreen(){
 
   const cached = rankClassementCache[rankParcoursId];
   if(!cached){ ensureRankClassement(rankParcoursId).then(()=>renderClassementScreen()); }
-  const rows = (cached||[]).filter(r=>r.mode===selectedRankMode && (r.taille||'grand')===selectedRankTaille).sort((a,b)=>a.seconds-b.seconds);
+  const rows = (cached||[]).filter(r=>r.mode===selectedRankMode && (r.taille||'grand')===selectedRankTaille).sort(compareRuns);
 
   el.innerHTML = `
     <div class="mode-tabs">${parcoursButtons}</div>
     <div class="mode-tabs">${MODES.map(m=>`<button data-m="${m.id}" class="${selectedRankMode===m.id?'active':''} ${rankModeReady(m.id)?'':'not-ready'}">${m.icon} ${m.label}</button>`).join('')}</div>
     <div class="mode-tabs">${TAILLES.map(t=>`<button data-t="${t.id}" class="${selectedRankTaille===t.id?'active':''} ${rankTailleReady(t.id)?'':'not-ready'}">${t.icon} ${t.label}</button>`).join('')}</div>
+    <p style="font-size:11.5px; color:var(--forest-light); text-align:center; margin:0 0 8px;">Classement par fautes puis par temps · touchez un nom pour voir ses balises manquées</p>
     <div class="card">
       ${!cached ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Chargement…</p>` : (rows.length===0 ? `<p style="font-size:14px; color:var(--forest-light); text-align:center; padding:10px 0;">Aucun temps enregistré pour cette combinaison.</p>` : `
-      <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Fautes</th><th style="text-align:right;">Temps</th></tr></thead>
-      <tbody>${rows.map((r,i)=>`<tr${r.incomplete?' style="opacity:.55;"':''}><td class="rk">${i+1}</td><td>${escapeHtml(r.name)}${r.incomplete?' <small>(incomplet)</small>':''}</td><td class="ft">${r.faults||0}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
+      <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Trouvées</th><th>Fautes</th><th style="text-align:right;">Temps</th></tr></thead>
+      <tbody>${rows.map((r,i)=>`<tr${r.incomplete?' style="opacity:.6;"':''}><td class="rk">${i+1}</td><td><a href="#" data-missed="${i}" style="color:var(--forest); text-decoration:underline; font-weight:600;">${escapeHtml(r.name)}</a>${r.incomplete?' <small>(incomplet)</small>':''}</td><td style="text-align:center;">${r.found!==undefined?`${r.found}/${r.total}`:'—'}</td><td class="ft">${totalFaultsOf(r)}</td><td class="tm">${formatDuration(r.seconds)}</td></tr>`).join('')}</tbody></table>`)}
     </div>`;
   el.querySelectorAll('.mode-tabs button[data-p]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ rankParcoursId=b.dataset.p; renderClassementScreen(); }) );
   el.querySelectorAll('.mode-tabs button[data-m]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedRankMode=b.dataset.m; renderClassementScreen(); }) );
   el.querySelectorAll('.mode-tabs button[data-t]:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedRankTaille=b.dataset.t; renderClassementScreen(); }) );
+  el.querySelectorAll('[data-missed]').forEach(a=> a.addEventListener('click', e=>{ e.preventDefault(); showMissedMap(rankParcoursId, rows[parseInt(a.dataset.missed,10)]); }) );
 }
+
+// ---------- missed checkpoints modal ----------
+let missedMapInstance = null;
+async function showMissedMap(parcoursId, record){
+  document.getElementById('missed-map-overlay').style.display = 'flex';
+  document.getElementById('missed-map-title').textContent = `Balises manquées — ${record.name}`;
+  const emptyEl = document.getElementById('missed-map-empty');
+  emptyEl.style.display = 'none';
+  document.getElementById('missed-map').style.display = 'block';
+  const data = await sbGet(parcoursKey(parcoursId));
+  const list = (data && Array.isArray(data.list)) ? data.list : [];
+  const missedIds = record.missedIds || [];
+  const missed = list.filter(b=>missedIds.includes(b.id));
+  if(missed.length===0){
+    document.getElementById('missed-map').style.display = 'none';
+    emptyEl.style.display = 'block';
+    emptyEl.textContent = record.missedIds ? 'Toutes les balises ont été trouvées !' : "Détail non disponible pour cette course (ancien enregistrement).";
+    return;
+  }
+  setTimeout(()=>{
+    if(!missedMapInstance){
+      missedMapInstance = L.map('missed-map');
+      L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Tiles &copy; Esri' }).addTo(missedMapInstance);
+    }
+    missedMapInstance.eachLayer(l=>{ if(!(l instanceof L.TileLayer)) missedMapInstance.removeLayer(l); });
+    const pts = [];
+    missed.forEach(b=>{
+      const icon = L.divIcon({className:'', html:'<div style="width:24px;height:24px;border-radius:50%;background:#A73E32;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5);"></div>', iconSize:[24,24], iconAnchor:[12,12]});
+      L.marker([b.lat,b.lon], {icon}).addTo(missedMapInstance).bindTooltip(b.name, {permanent:true, direction:'top', offset:[0,-12]});
+      pts.push([b.lat,b.lon]);
+    });
+    missedMapInstance.invalidateSize();
+    missedMapInstance.fitBounds(pts, {padding:[30,30]});
+  }, 50);
+}
+document.getElementById('btn-close-missed-map').addEventListener('click', ()=>{ document.getElementById('missed-map-overlay').style.display = 'none'; });
 
 // ---------- boot ----------
 async function bootApp(){

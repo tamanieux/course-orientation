@@ -3106,11 +3106,13 @@ function renderRankPreview(){
   let html = '';
   modes.forEach(m=>{
     tailles.forEach(t=>{
-      const rows = classement.filter(r=>r.mode===m && (r.taille||'grand')===t).sort((a,b)=>a.seconds-b.seconds).slice(0,3);
+      const totalFaultsOf = r => { const missed = (r.total!==undefined && r.found!==undefined) ? Math.max(0, r.total-r.found) : 0; return (r.trapFaults!==undefined ? r.trapFaults : (r.faults||0)) + missed; };
+      const rows = classement.filter(r=>r.mode===m && (r.taille||'grand')===t)
+        .sort((a,b)=>{ const fa=totalFaultsOf(a), fb=totalFaultsOf(b); return fa!==fb ? fa-fb : a.seconds-b.seconds; }).slice(0,3);
       if(rows.length===0) return;
       html += `<h3 style="font-size:13.5px; margin:12px 0 6px; color:var(--forest);">${MODE_LABELS[m]} — ${TAILLE_LABELS[t]}</h3>
-        <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Temps</th><th>Fautes</th></tr></thead><tbody>
-        ${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}</td><td>${formatDuration(r.seconds)}</td><td>${r.faults||0}</td></tr>`).join('')}
+        <table class="rank"><thead><tr><th>#</th><th>Nom</th><th>Trouvées</th><th>Temps</th><th>Fautes</th></tr></thead><tbody>
+        ${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.name)}${r.incomplete?' <small>(incomplet)</small>':''}</td><td>${r.found!==undefined?`${r.found}/${r.total}`:'—'}</td><td>${formatDuration(r.seconds)}</td><td>${totalFaultsOf(r)}</td></tr>`).join('')}
         </tbody></table>`;
     });
   });
