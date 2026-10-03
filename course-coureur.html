@@ -515,8 +515,11 @@ function renderPlayScreen(){
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-do-start" disabled>Démarrer le chrono</button>
         <div style="height:8px;"></div>
+        <button class="btn btn-outline" id="btn-scan-start">📡 Scanner le QR du Départ</button>
+        <div style="height:8px;"></div>
         <button class="btn btn-ghost" id="btn-cancel-run">Annuler</button>
       </div>`;
+    document.getElementById('btn-scan-start').addEventListener('click', ()=> openScanner(handleScan, 'Scanner le Départ'));
     document.getElementById('btn-cancel-run').addEventListener('click', ()=>{ stopReadyMap(); clearActiveRun(); renderPlayScreen(); });
     document.getElementById('btn-do-start').addEventListener('click', ()=>{
       activeRun.startedAt = Date.now();
@@ -530,17 +533,6 @@ function renderPlayScreen(){
     return;
   }
 
-  function buildClassementRecord(extra){
-    const foundIds = others.filter(o=>activeRun.visited[o.id]).map(o=>o.id);
-    const missedIds = others.filter(o=>!activeRun.visited[o.id]).map(o=>o.id);
-    return Object.assign({
-      name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille,
-      seconds: (activeRun.finishedAt-activeRun.startedAt)/1000,
-      trapFaults: activeRun.faults||0,
-      found: foundIds.length, total: others.length, missedIds,
-      date: new Date().toISOString()
-    }, extra||{});
-  }
   window.abandonRun = function(){
     if(!confirm("Abandonner cette course ? Aucun temps ne sera enregistré.")) return;
     stopProximityWatch();
@@ -549,15 +541,7 @@ function renderPlayScreen(){
   };
   window.finishNow = async function(){
     if(!confirm("Terminer la course maintenant ? Le temps sera enregistré comme incomplet (balises manquantes ou retour au Départ non fait).")) return;
-    activeRun.finished = true;
-    activeRun.finishedAt = Date.now();
-    activeRun.incomplete = true;
-    const rec = buildClassementRecord({incomplete:true});
-    activeRun.rank = computeRank(activeRun.mode, activeRun.taille, rec);
-    classement.push(rec);
-    await saveClassement();
-    persistActiveRun();
-    stopProximityWatch();
+    await completeRun({incomplete:true});
     renderPlayScreen();
   };
 
@@ -573,21 +557,17 @@ function renderPlayScreen(){
         <div class="proximity-box"><div class="dist" id="prox-dist">— m</div><div class="lbl">jusqu'à l'Arrivée</div><div class="acc" id="prox-acc"></div></div>
         <button class="btn btn-primary" id="btn-do-finish" disabled>Valider l'arrivée</button>
         <div style="height:8px;"></div>
+        <button class="btn btn-outline" id="btn-scan-finish">📡 Scanner le QR de l'Arrivée</button>
+        <div style="height:8px;"></div>
         <button class="btn btn-outline" id="btn-finish-now" disabled onclick="window.finishNow()">🏁 Terminer maintenant</button>
         <div style="height:8px;"></div>
         <button class="btn btn-ghost" onclick="window.abandonRun()">Abandonner la course</button>
       </div>`;
     document.getElementById('btn-do-finish').addEventListener('click', async ()=>{
-      activeRun.finished = true;
-      activeRun.finishedAt = Date.now();
-      const rec = buildClassementRecord();
-      activeRun.rank = computeRank(activeRun.mode, activeRun.taille, rec);
-      classement.push(rec);
-      await saveClassement();
-      persistActiveRun();
-      stopProximityWatch();
+      await completeRun();
       renderPlayScreen();
     });
+    document.getElementById('btn-scan-finish').addEventListener('click', ()=> openScanner(handleScan, "Scanner l'Arrivée"));
     watchProximityTo(start, balises.startRadius, balises.startAccuracy, ['btn-do-finish','btn-finish-now']);
     startLiveTimer();
     return;
@@ -706,6 +686,30 @@ function computeRank(mode, taille, myRecord){
   return runs.filter(r=>compareRuns(r, myRecord)<0).length + 1;
 }
 
+function buildClassementRecord(extra){
+  const others = othersFor(activeRun.taille, activeRun.mode);
+  const foundIds = others.filter(o=>activeRun.visited[o.id]).map(o=>o.id);
+  const missedIds = others.filter(o=>!activeRun.visited[o.id]).map(o=>o.id);
+  return Object.assign({
+    name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille,
+    seconds: (activeRun.finishedAt-activeRun.startedAt)/1000,
+    trapFaults: activeRun.faults||0,
+    found: foundIds.length, total: others.length, missedIds,
+    date: new Date().toISOString()
+  }, extra||{});
+}
+async function completeRun(extra){
+  activeRun.finished = true;
+  activeRun.finishedAt = Date.now();
+  if(extra && extra.incomplete) activeRun.incomplete = true;
+  const rec = buildClassementRecord(extra);
+  activeRun.rank = computeRank(activeRun.mode, activeRun.taille, rec);
+  classement.push(rec);
+  await saveClassement();
+  persistActiveRun();
+  stopProximityWatch();
+}
+
 async function handleScan(rawCode){
   const bal = findBaliseByCode(rawCode);
   if(!bal){ setScannerError('QR code non reconnu.'); return; }
@@ -713,6 +717,29 @@ async function handleScan(rawCode){
   let coords;
   try{ coords = await getPosition(); } catch(e){ setScannerError("Impossible d'obtenir votre position GPS."); return; }
   const dist = haversine(coords.latitude, coords.longitude, bal.lat, bal.lon);
+
+  if(bal.isStart){
+    const sRadius = balises.startRadius || 15, sAcc = balises.startAccuracy || 25;
+    if(dist > sRadius){ setScannerError(`Vous êtes à ${Math.round(dist)} m du Départ (max ${sRadius} m).`); return; }
+    if(coords.accuracy > sAcc){ setScannerError(`Précision GPS insuffisante (≈ ${Math.round(coords.accuracy)} m). Patientez puis réessayez.`); return; }
+    if(!activeRun.startedAt){
+      activeRun.startedAt = Date.now();
+      persistActiveRun();
+      stopProximityWatch();
+      stopReadyMap();
+      closeScanner();
+      renderPlayScreen();
+      return;
+    }
+    const others = othersFor(activeRun.taille, activeRun.mode);
+    const remaining = others.filter(o=>!activeRun.visited[o.id]);
+    if(remaining.length>0){ setScannerError(`Il reste ${remaining.length} balise(s) à trouver avant l'Arrivée.`); return; }
+    await completeRun();
+    closeScanner();
+    renderPlayScreen();
+    return;
+  }
+
   const radius = balises.radius || 30;
   if(dist > radius){ setScannerError(`Vous êtes à ${Math.round(dist)} m de "${bal.name}" (max ${radius} m).`); return; }
 
@@ -720,7 +747,6 @@ async function handleScan(rawCode){
     if(!activeRun.faultBalises[bal.id]){ activeRun.faultBalises[bal.id]=true; activeRun.faults=(activeRun.faults||0)+1; persistActiveRun(); }
     closeScanner(); playMsg = {ok:false, text:'Fausse balise ! +1 faute.'}; renderPlayScreen(); return;
   }
-  if(bal.isStart){ setScannerError("Utilisez le bouton dédié dans l'onglet Jouer pour le Départ / l'Arrivée."); return; }
   const others = othersFor(activeRun.taille, activeRun.mode);
   if(!others.find(o=>o.id===bal.id)){ setScannerError(`"${bal.name}" ne fait pas partie de ce parcours (${MODES.find(m=>m.id===activeRun.mode).label} / ${TAILLES.find(t=>t.id===activeRun.taille).label}).`); return; }
   if(activeRun.visited[bal.id]){ setScannerError(`"${bal.name}" est déjà validée.`); return; }
