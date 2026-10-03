@@ -262,6 +262,7 @@ async function testConnection(){
 }
 function parcoursKey(id){ return 'parcours-'+id; }
 function classementKey(id){ return 'classement-'+id; }
+function validationsKey(id){ return 'validations-'+id; }
 async function loadParcoursIndex(){ const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : []; }
 async function loadParcoursData(id){
   const data = await sbGet(parcoursKey(id));
@@ -476,7 +477,7 @@ function renderPlayScreen(){
         renderPlayScreen();
         return;
       }
-      activeRun = { parcoursId: currentParcoursId, name, mode: selectedMode, taille: selectedTaille, startedAt: null, visited: {}, faultBalises: {}, faults: 0, finished: false, finishedAt: null };
+      activeRun = { parcoursId: currentParcoursId, sessionId: Math.random().toString(36).slice(2,10), name, mode: selectedMode, taille: selectedTaille, startedAt: null, visited: {}, faultBalises: {}, faults: 0, finished: false, finishedAt: null };
       persistActiveRun();
       renderPlayScreen();
     });
@@ -591,6 +592,8 @@ function renderPlayScreen(){
       <div style="height:8px;"></div>
       <button class="btn btn-outline" id="btn-goto-map">🗺️ Voir la carte</button>
       <div style="height:8px;"></div>
+      <button class="btn btn-ghost" id="btn-manual-validation">⚠️ QR abîmé ? Demander une validation à l'organisateur</button>
+      <div style="height:8px;"></div>
       <p style="font-size:11.5px; color:var(--forest-light); text-align:center; margin:0 0 4px;" id="finish-now-hint">Distance jusqu'au Départ : — m (nécessaire pour "Terminer maintenant")</p>
       <button class="btn btn-outline" id="btn-finish-now" disabled onclick="window.finishNow()">🏁 Terminer maintenant</button>
       <div style="height:8px;"></div>
@@ -598,6 +601,7 @@ function renderPlayScreen(){
     </div>`;
   document.getElementById('btn-scan-any').addEventListener('click', ()=> openScanner(handleScan, 'Scanner une balise'));
   document.getElementById('btn-goto-map').addEventListener('click', ()=> switchTab('map'));
+  document.getElementById('btn-manual-validation').addEventListener('click', requestManualValidation);
   const photoBtn = document.getElementById('btn-take-photo');
   if(photoBtn) photoBtn.addEventListener('click', ()=> document.getElementById('rando-photo-input').click());
   watchProximityTo(start, balises.startRadius, balises.startAccuracy, 'btn-finish-now', 'finish-now-hint');
@@ -708,6 +712,49 @@ async function completeRun(extra){
   await saveClassement();
   persistActiveRun();
   stopProximityWatch();
+}
+
+// ---------- manual validation fallback (QR damaged/unreadable) ----------
+async function requestManualValidation(){
+  if(!confirm("Envoyer une demande à l'organisateur pour valider une balise à votre position actuelle ? À utiliser seulement si le QR est abîmé ou illisible.")) return;
+  let coords;
+  try{ coords = await getPosition(); }catch(e){ alert("Impossible d'obtenir votre position GPS. Réessayez."); return; }
+  const list = await sbGet(validationsKey(activeRun.parcoursId));
+  const arr = Array.isArray(list) ? list : [];
+  arr.push({
+    id: Math.random().toString(36).slice(2,10),
+    sessionId: activeRun.sessionId,
+    name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille,
+    lat: coords.latitude, lon: coords.longitude, accuracy: coords.accuracy,
+    requestedAt: Date.now(), status: 'pending', baliseId: null
+  });
+  await sbSet(validationsKey(activeRun.parcoursId), arr);
+  playMsg = {ok:true, text:"Demande envoyée à l'organisateur. Continuez à chercher pendant ce temps — vous serez prévenu(e) dès que c'est validé."};
+  renderPlayScreen();
+}
+async function checkMyValidationRequests(){
+  if(!activeRun || !activeRun.sessionId || activeRun.finished) return;
+  const list = await sbGet(validationsKey(activeRun.parcoursId));
+  if(!Array.isArray(list)) return;
+  let changed = false;
+  for(const req of list){
+    if(req.sessionId!==activeRun.sessionId) continue;
+    if(req.status==='approved' && req.baliseId && !activeRun.visited[req.baliseId]){
+      activeRun.visited[req.baliseId] = Date.now();
+      req.status = 'consumed';
+      changed = true;
+      playMsg = {ok:true, text:"Votre demande a été validée par l'organisateur !"};
+    } else if(req.status==='rejected' && !req.seen){
+      req.seen = true;
+      changed = true;
+      playMsg = {ok:false, text:"Votre demande a été refusée par l'organisateur. Rapprochez-vous de la balise et réessayez, ou recontactez-le."};
+    }
+  }
+  if(changed){
+    persistActiveRun();
+    await sbSet(validationsKey(activeRun.parcoursId), list);
+    renderPlayScreen();
+  }
 }
 
 async function handleScan(rawCode){
