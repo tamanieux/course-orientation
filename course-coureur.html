@@ -202,8 +202,8 @@
 (function(){
 "use strict";
 
-let SUPABASE_URL = "https://ydgihoqtbadjjavvmpuj.supabase.co  ";
-let SUPABASE_ANON_KEY = "sb_publishable_2pgx8EUInpKFNQ_9sznL0w_W5Q4pSdT";
+let SUPABASE_URL = "";
+let SUPABASE_ANON_KEY = "";
 
 const MODES = [
   {id:'velo', label:'Vélo', icon:'🚴'},
@@ -331,6 +331,7 @@ function startGlobalWatch(){
     userLatLng = [pos.coords.latitude, pos.coords.longitude];
     userAccuracy = pos.coords.accuracy;
     updateUserMarker();
+    updateReadyUserMarker();
     updateMeStatus();
   }, ()=>{
     const el = document.getElementById('me-status');
@@ -402,6 +403,7 @@ async function loadReadiness(id){
 function renderPlayScreen(){
   updateTabbarVisibility();
   stopProximityWatch();
+  stopReadyMap();
   const el = document.getElementById('screen-play');
 
   // ---- no active run: show the up-front setup card (parcours + mode + taille + nom) ----
@@ -508,20 +510,23 @@ function renderPlayScreen(){
       <div class="card" style="text-align:center;">
         <h2 style="color:var(--forest); margin-top:0;">Prêt(e), ${escapeHtml(activeRun.name)} ?</h2>
         <p style="font-size:14px;">Rendez-vous au point de Départ. Le bouton s'activera automatiquement dès que votre position est confirmée.</p>
+        <div id="ready-map" style="height:240px; border-radius:10px; overflow:hidden; margin-bottom:14px; border:1.5px solid var(--line);"></div>
         <div class="proximity-box"><div class="dist" id="prox-dist">— m</div><div class="lbl">jusqu'au Départ</div><div class="acc" id="prox-acc"></div></div>
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-do-start" disabled>Démarrer le chrono</button>
         <div style="height:8px;"></div>
         <button class="btn btn-ghost" id="btn-cancel-run">Annuler</button>
       </div>`;
-    document.getElementById('btn-cancel-run').addEventListener('click', ()=>{ clearActiveRun(); renderPlayScreen(); });
+    document.getElementById('btn-cancel-run').addEventListener('click', ()=>{ stopReadyMap(); clearActiveRun(); renderPlayScreen(); });
     document.getElementById('btn-do-start').addEventListener('click', ()=>{
       activeRun.startedAt = Date.now();
       persistActiveRun();
       stopProximityWatch();
+      stopReadyMap();
       renderPlayScreen();
     });
     watchProximityTo(start, balises.startRadius, balises.startAccuracy, 'btn-do-start');
+    renderReadyMap(start);
     return;
   }
 
@@ -627,6 +632,36 @@ document.getElementById('rando-photo-input').addEventListener('change', e=>{
   e.target.value = '';
   renderPlayScreen();
 });
+
+let readyMap = null, readyUserMarker = null, readyStartMarker = null;
+function renderReadyMap(startBal){
+  if(!readyMap){
+    readyMap = L.map('ready-map', { zoomControl:false, attributionControl:true });
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19, attribution:'Tiles &copy; Esri' }).addTo(readyMap);
+  }
+  const icon = L.divIcon({className:'', html:'<div style="width:26px;height:26px;border-radius:7px;background:#E0611E;border:3px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.5); display:flex; align-items:center; justify-content:center; font-size:13px;">🏁</div>', iconSize:[26,26], iconAnchor:[13,13]});
+  if(!readyStartMarker){ readyStartMarker = L.marker([startBal.lat, startBal.lon], {icon}).addTo(readyMap).bindTooltip('Départ', {permanent:true, direction:'top', offset:[0,-14], className:'coureur-map-label'}); }
+  else { readyStartMarker.setLatLng([startBal.lat, startBal.lon]); }
+  updateReadyUserMarker();
+  setTimeout(()=>{
+    if(!readyMap) return;
+    readyMap.invalidateSize();
+    const pts = [[startBal.lat, startBal.lon]];
+    if(userLatLng) pts.push(userLatLng);
+    if(pts.length===2) readyMap.fitBounds(pts, {padding:[40,40]});
+    else readyMap.setView(pts[0], 16);
+  }, 60);
+}
+function updateReadyUserMarker(){
+  if(!readyMap || !userLatLng) return;
+  if(!readyUserMarker){
+    const icon = L.divIcon({className:'', html:'<div class="pulse-dot"></div>', iconSize:[16,16], iconAnchor:[8,8]});
+    readyUserMarker = L.marker(userLatLng, {icon}).addTo(readyMap);
+  } else { readyUserMarker.setLatLng(userLatLng); }
+}
+function stopReadyMap(){
+  if(readyMap){ readyMap.remove(); readyMap = null; readyUserMarker = null; readyStartMarker = null; }
+}
 
 function watchProximityTo(target, radius, maxAccuracy, buttonIds, hintElId){
   stopProximityWatch();
