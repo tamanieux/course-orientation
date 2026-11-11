@@ -220,6 +220,9 @@
         <button class="btn btn-danger-outline" id="btn-reset-classement">Effacer les temps de ce parcours</button>
         <div style="height:8px;"></div>
         <button class="btn btn-danger-outline" id="btn-reset-balises">Effacer les balises de ce parcours</button>
+        <div style="height:8px;"></div>
+        <button class="btn btn-danger-outline" id="btn-delete-parcours">🗑️ Supprimer ce parcours</button>
+        <p class="hint" style="margin-top:6px;">Supprime définitivement le parcours actif : balises, réglages, classement et demandes de validation.</p>
       </div>
     </div>
   </div>
@@ -2568,6 +2571,17 @@ async function sbSet(key, value){
     return res.ok;
   }catch(e){ console.error(e); return false; }
 }
+async function sbDel(key){
+  try{
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/kv_store?key=eq.${encodeURIComponent(key)}`, {
+      method:'DELETE',
+      headers:{ apikey: SUPABASE_ANON_KEY, Authorization: 'Bearer '+SUPABASE_ANON_KEY }
+    });
+    if(res.ok) return true;
+  }catch(e){ console.error(e); }
+  // Repli si la suppression est interdite par les règles Supabase : on vide la valeur
+  return sbSet(key, key.startsWith('parcours-') && !key.startsWith('parcours-index') ? {} : []);
+}
 function parcoursKey(id){ return 'parcours-'+id; }
 function classementKey(id){ return 'classement-'+id; }
 
@@ -3099,6 +3113,34 @@ document.getElementById('btn-reset-balises').addEventListener('click', async ()=
   if(confirm('Effacer toutes les balises de ce parcours ?')){
     balises.list = []; await saveBalises(); cancelEdit(); renderBaliseList(); refreshAdminMarkers();
   }
+});
+document.getElementById('btn-delete-parcours').addEventListener('click', async ()=>{
+  const msgEl = document.getElementById('parcours-msg');
+  if(!currentParcoursId) return;
+  const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
+  const name = entry ? entry.name : 'ce parcours';
+  if(!confirm(`Supprimer définitivement le parcours « ${name} » ?\n\nBalises, réglages, classement et demandes de validation seront perdus.`)) return;
+  const typed = prompt(`Pour confirmer, tapez SUPPRIMER :`);
+  if(typed===null || typed.trim().toUpperCase()!=='SUPPRIMER') return;
+  const id = currentParcoursId;
+  parcoursIndex = parcoursIndex.filter(p=>p.id!==id);
+  const ok = await sbSet('parcours-index', parcoursIndex);
+  if(!ok){
+    await loadParcoursIndex();
+    msgEl.innerHTML = '<div class="msg msg-error">Échec de la suppression (connexion ?). Réessayez.</div>';
+    renderParcoursSelect();
+    return;
+  }
+  await Promise.all([sbDel(parcoursKey(id)), sbDel(classementKey(id)), sbDel(validationsKey(id))]);
+  if(localStorage.getItem('last-parcours')===id) localStorage.removeItem('last-parcours');
+  currentParcoursId = null;
+  balises = { list: [], radius: 30, startRadius: 15, startAccuracy: 25 };
+  classement = []; validations = []; lastPendingKey = '';
+  if(typeof cancelEdit === 'function') cancelEdit();
+  document.getElementById('parcours-content').style.display = 'none';
+  renderParcoursSelect();
+  if(parcoursIndex.length>0){ await selectParcours(parcoursIndex[0].id); }
+  msgEl.innerHTML = `<div class="msg msg-success">Parcours « ${escapeHtml(name)} » supprimé.</div>`;
 });
 document.getElementById('btn-refresh-rank').addEventListener('click', async ()=>{
   if(!currentParcoursId) return;
