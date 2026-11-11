@@ -263,7 +263,22 @@ async function testConnection(){
 function parcoursKey(id){ return 'parcours-'+id; }
 function classementKey(id){ return 'classement-'+id; }
 function validationsKey(id){ return 'validations-'+id; }
-async function loadParcoursIndex(){ const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : []; }
+let lockedParcours = null; // parcours privé ouvert via son lien : seul visible
+async function loadParcoursIndex(){
+  if(lockedParcours){ parcoursIndex = [lockedParcours]; return; }
+  const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : [];
+}
+// Un parcours privé n'est pas dans la liste publique : on ne l'ouvre que si le lien (?pc=...) est fourni
+async function applyPrivateLink(){
+  const pc = new URLSearchParams(location.search).get('pc') || (activeRun && activeRun.parcoursId);
+  if(!pc || parcoursIndex.some(p=>p.id===pc)) return;
+  const data = await sbGet(parcoursKey(pc));
+  if(data && data.private){
+    lockedParcours = { id: pc, name: data.name || 'Parcours privé' };
+    parcoursIndex = [lockedParcours];
+    selectedParcoursForSetup = pc;
+  }
+}
 async function loadParcoursData(id){
   const data = await sbGet(parcoursKey(id));
   balises = Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false }, data || {});
@@ -1052,6 +1067,7 @@ async function bootApp(){
   document.getElementById('tabbar').style.display = 'flex';
   activeRun = loadActiveRun();
   await loadParcoursIndex();
+  await applyPrivateLink();
   if(!activeRun) await checkLandingParams();
   if(activeRun && activeRun.parcoursId){
     currentParcoursId = activeRun.parcoursId;

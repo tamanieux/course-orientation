@@ -114,10 +114,26 @@
       <div class="field"><label>Créer un nouveau parcours</label>
         <div class="row2"><input type="text" id="new-parcours-name" placeholder="ex. Forêt de Bessède"><button class="btn btn-outline" id="btn-create-parcours" style="width:auto; padding:11px 16px;">Créer</button></div>
       </div>
+      <div class="chk"><input type="checkbox" id="new-parcours-private"><label for="new-parcours-private">Créer ce parcours en mode privé (invisible du public, accessible uniquement par son lien)</label></div>
       <div id="parcours-msg"></div>
     </div>
 
     <div id="parcours-content" style="display:none;">
+
+      <div class="card">
+        <h2>🔒 Confidentialité du parcours</h2>
+        <div class="chk"><input type="checkbox" id="chk-private"><label for="chk-private">Parcours privé — il n'apparaît pas dans la liste des coureurs et son classement n'est visible que par les personnes qui ont son lien (et ici, en mode administrateur)</label></div>
+        <div id="private-link-box" style="display:none; margin-top:10px;">
+          <p class="hint">Donnez ce lien (ou son QR code) uniquement aux participants : il les mène directement à ce parcours, et à lui seul.</p>
+          <div class="field"><label>Lien d'accès privé</label><input type="text" id="private-link" readonly></div>
+          <p class="hint" id="private-link-hint" style="display:none; color:var(--danger);">Renseignez d'abord « Lien de la page Coureur » dans la carte « QR code d'accès à l'application » plus bas : le lien privé s'affichera ici.</p>
+          <div class="row2">
+            <button class="btn btn-outline" id="btn-copy-private-link">📋 Copier le lien</button>
+            <button class="btn btn-secondary" id="btn-private-qr">⬇️ PDF du QR code</button>
+          </div>
+        </div>
+        <div id="private-msg"></div>
+      </div>
 
       <div class="card">
         <h2>Réglages de validation</h2>
@@ -2620,15 +2636,27 @@ async function testConnection(){
 }
 
 // ---------- parcours management ----------
+// Les parcours publics sont dans 'parcours-index' (lu par les coureurs),
+// les parcours privés dans 'parcours-index-prives' (jamais lu par la page coureur).
 async function loadParcoursIndex(){
-  const idx = await sbGet('parcours-index');
-  parcoursIndex = Array.isArray(idx) ? idx : [];
+  const pub = await sbGet('parcours-index');
+  const priv = await sbGet('parcours-index-prives');
+  parcoursIndex = [].concat(
+    Array.isArray(pub) ? pub : [],
+    Array.isArray(priv) ? priv.map(p=>Object.assign({}, p, {private:true})) : []
+  );
+}
+async function saveParcoursIndex(){
+  const strip = ({private:_p, ...rest}) => rest;
+  const a = await sbSet('parcours-index', parcoursIndex.filter(p=>!p.private).map(strip));
+  const b = await sbSet('parcours-index-prives', parcoursIndex.filter(p=>p.private).map(strip));
+  return a && b;
 }
 function renderParcoursSelect(){
   const sel = document.getElementById('parcours-select');
   sel.innerHTML = parcoursIndex.length===0
     ? `<option value="">— Aucun parcours, créez-en un ci-dessous —</option>`
-    : parcoursIndex.map(p=>`<option value="${p.id}" ${p.id===currentParcoursId?'selected':''}>${escapeHtml(p.name)}</option>`).join('');
+    : parcoursIndex.map(p=>`<option value="${p.id}" ${p.id===currentParcoursId?'selected':''}>${p.private?'🔒 ':''}${escapeHtml(p.name)}</option>`).join('');
   const current = parcoursIndex.find(p=>p.id===currentParcoursId);
   document.getElementById('rename-parcours-input').value = current ? current.name : '';
 }
@@ -2643,7 +2671,8 @@ document.getElementById('btn-rename-parcours').addEventListener('click', async (
   if(!newName){ msgEl.innerHTML = '<div class="msg msg-error">Le nom ne peut pas être vide.</div>'; return; }
   const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
   if(entry) entry.name = newName;
-  await sbSet('parcours-index', parcoursIndex);
+  if(entry && entry.private){ balises.name = newName; await saveBalises(); }
+  await saveParcoursIndex();
   msgEl.innerHTML = '<div class="msg msg-success">Parcours renommé.</div>';
   renderParcoursSelect();
 });
@@ -2652,10 +2681,12 @@ document.getElementById('btn-create-parcours').addEventListener('click', async (
   const msgEl = document.getElementById('parcours-msg');
   if(!name){ msgEl.innerHTML = '<div class="msg msg-error">Donnez un nom au parcours.</div>'; return; }
   const id = uid();
-  parcoursIndex.push({id, name});
-  await sbSet('parcours-index', parcoursIndex);
-  await sbSet(parcoursKey(id), { radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false });
+  const isPrivate = document.getElementById('new-parcours-private').checked;
+  parcoursIndex.push(isPrivate ? {id, name, private:true} : {id, name});
+  await sbSet(parcoursKey(id), Object.assign({ radius:30, startRadius:15, startAccuracy:25, list:[], orderedMode:false }, isPrivate ? {private:true, name} : {}));
+  await saveParcoursIndex();
   document.getElementById('new-parcours-name').value = '';
+  document.getElementById('new-parcours-private').checked = false;
   msgEl.innerHTML = '<div class="msg msg-success">Parcours créé.</div>';
   renderParcoursSelect();
   await selectParcours(id);
@@ -2675,6 +2706,7 @@ async function selectParcours(id){
   renderBaliseList();
   renderRankPreview();
   renderParcoursSelect();
+  renderPrivacyCard();
   loadValidations(true);
 }
 async function saveBalises(){ if(currentParcoursId) return sbSet(parcoursKey(currentParcoursId), balises); }
@@ -3124,7 +3156,7 @@ document.getElementById('btn-delete-parcours').addEventListener('click', async (
   if(typed===null || typed.trim().toUpperCase()!=='SUPPRIMER') return;
   const id = currentParcoursId;
   parcoursIndex = parcoursIndex.filter(p=>p.id!==id);
-  const ok = await sbSet('parcours-index', parcoursIndex);
+  const ok = await saveParcoursIndex();
   if(!ok){
     await loadParcoursIndex();
     msgEl.innerHTML = '<div class="msg msg-error">Échec de la suppression (connexion ?). Réessayez.</div>';
@@ -3231,6 +3263,72 @@ function renderRankPreview(){
   });
   el.innerHTML = html || 'Aucun temps enregistré pour le moment.';
 }
+
+// ---------- confidentialité du parcours ----------
+function privateLinkFor(id){
+  const base = (document.getElementById('app-url').value.trim() || localStorage.getItem('app-url') || '').replace(/\/$/,'');
+  return base ? `${base}?pc=${encodeURIComponent(id)}` : '';
+}
+function renderPrivacyCard(){
+  const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
+  const chk = document.getElementById('chk-private');
+  chk.checked = !!(entry && entry.private);
+  document.getElementById('private-link-box').style.display = chk.checked ? 'block' : 'none';
+  if(chk.checked){
+    const link = privateLinkFor(currentParcoursId);
+    document.getElementById('private-link').value = link;
+    document.getElementById('private-link-hint').style.display = link ? 'none' : 'block';
+  }
+}
+document.getElementById('app-url').addEventListener('input', renderPrivacyCard);
+document.getElementById('chk-private').addEventListener('change', async e=>{
+  const msg = document.getElementById('private-msg');
+  const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
+  if(!entry){ e.target.checked = false; return; }
+  const flag = e.target.checked;
+  if(!flag && !confirm('Rendre ce parcours public ? Il apparaîtra dans la liste et son classement sera visible de tous.')){ e.target.checked = true; return; }
+  entry.private = flag; balises.private = flag; balises.name = entry.name;
+  const ok = (await saveBalises()) && (await saveParcoursIndex());
+  if(!ok){
+    balises.private = !flag;
+    await loadParcoursIndex();
+    msg.innerHTML = '<div class="msg msg-error">Échec de l\u2019enregistrement (connexion ?). Réessayez.</div>';
+  } else {
+    msg.innerHTML = flag
+      ? '<div class="msg msg-success">Parcours privé : il n\u2019apparaît plus dans la liste publique. Utilisez le lien ci-dessous.</div>'
+      : '<div class="msg msg-success">Parcours redevenu public.</div>';
+  }
+  renderParcoursSelect();
+  renderPrivacyCard();
+});
+document.getElementById('btn-copy-private-link').addEventListener('click', async ()=>{
+  const input = document.getElementById('private-link');
+  const msg = document.getElementById('private-msg');
+  if(!input.value){ msg.innerHTML = '<div class="msg msg-error">Renseignez d\u2019abord le lien de la page Coureur.</div>'; return; }
+  try{ await navigator.clipboard.writeText(input.value); }
+  catch(e){ input.select(); document.execCommand('copy'); }
+  msg.innerHTML = '<div class="msg msg-success">Lien copié.</div>';
+});
+document.getElementById('btn-private-qr').addEventListener('click', ()=>{
+  const link = privateLinkFor(currentParcoursId);
+  if(!link){ alert("Renseignez d'abord le lien de la page Coureur."); return; }
+  const entry = parcoursIndex.find(p=>p.id===currentParcoursId);
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  const pageW = 210;
+  let qrDataUrl;
+  try{ qrDataUrl = makeQRDataURL(link, 12); }
+  catch(e){ console.error('QR generation failed', e); alert("La génération du QR a échoué, réessayez."); return; }
+  doc.setFontSize(20); doc.setFont(undefined, 'bold');
+  doc.text('Rejoindre la course', pageW/2, 30, { align:'center' });
+  doc.setFontSize(14); doc.setFont(undefined, 'normal');
+  doc.text(doc.splitTextToSize(entry ? entry.name : '', pageW-40), pageW/2, 40, { align:'center' });
+  const qrSize = 120;
+  doc.addImage(qrDataUrl, 'PNG', (pageW-qrSize)/2, 50, qrSize, qrSize);
+  doc.setFontSize(10);
+  doc.text(doc.splitTextToSize(link, pageW-40), pageW/2, 50+qrSize+12, { align:'center' });
+  doc.save('acces-parcours-prive.pdf');
+});
 
 async function bootMain(){
   document.getElementById('config-card').style.display = 'none';
