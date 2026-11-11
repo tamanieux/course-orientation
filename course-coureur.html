@@ -719,13 +719,27 @@ async function requestManualValidation(){
   if(!confirm("Envoyer une demande à l'organisateur pour valider une balise à votre position actuelle ? À utiliser seulement si le QR est abîmé ou illisible.")) return;
   let coords;
   try{ coords = await getPosition(); }catch(e){ alert("Impossible d'obtenir votre position GPS. Réessayez."); return; }
+  const remaining = othersFor(activeRun.taille, activeRun.mode).filter(o=>!activeRun.visited[o.id]);
+  const pool = balises.orderedMode ? remaining.slice(0,1) : remaining;
+  const radius = balises.radius || 30;
+  let nearest = null, nearestDist = Infinity;
+  pool.forEach(o=>{ const d = haversine(coords.latitude, coords.longitude, o.lat, o.lon); if(d<nearestDist){ nearestDist = d; nearest = o; } });
+  if(!nearest || nearestDist > radius){
+    alert("Votre position n'est à portée d'aucune balise à trouver : demande non envoyée. Rapprochez-vous de la balise puis réessayez.");
+    return;
+  }
   const list = await sbGet(validationsKey(activeRun.parcoursId));
   const arr = Array.isArray(list) ? list : [];
+  if(arr.some(r=>r.sessionId===activeRun.sessionId && r.status==='pending')){
+    alert("Une demande est déjà en attente de validation par l'organisateur.");
+    return;
+  }
   arr.push({
     id: Math.random().toString(36).slice(2,10),
     sessionId: activeRun.sessionId,
     name: activeRun.name, mode: activeRun.mode, taille: activeRun.taille,
     lat: coords.latitude, lon: coords.longitude, accuracy: coords.accuracy,
+    candidateId: nearest.id, candidateDist: Math.round(nearestDist),
     requestedAt: Date.now(), status: 'pending', baliseId: null
   });
   await sbSet(validationsKey(activeRun.parcoursId), arr);
@@ -1051,6 +1065,7 @@ async function bootApp(){
   setInterval(async ()=>{
     await loadParcoursIndex();
     if(currentParcoursId) await loadParcoursData(currentParcoursId);
+    await checkMyValidationRequests();
     const playVisible = document.getElementById('screen-play').classList.contains('active');
     const mapVisible = document.getElementById('screen-map').classList.contains('active');
     const rankVisible = document.getElementById('screen-classement').classList.contains('active');

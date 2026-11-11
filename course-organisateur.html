@@ -203,6 +203,13 @@
       </div>
 
       <div class="card">
+        <h2>Demandes de validation manuelle <span id="validations-badge" style="color:var(--trail);"></span></h2>
+        <p class="hint">Quand un QR est abîmé, le coureur peut envoyer une demande avec sa position GPS. Rien n'est validé automatiquement : vérifiez la distance indiquée avant de valider ou de refuser.</p>
+        <div id="validations-list" class="hint">Aucune demande en attente.</div>
+        <button class="btn btn-outline" id="btn-refresh-validations" style="margin-top:8px;">🔄 Actualiser</button>
+      </div>
+
+      <div class="card">
         <h2>Classement en cours</h2>
         <div id="rank-preview" class="hint">Chargement…</div>
         <button class="btn btn-outline" id="btn-refresh-rank" style="margin-top:8px;">🔄 Actualiser</button>
@@ -2654,6 +2661,7 @@ async function selectParcours(id){
   renderBaliseList();
   renderRankPreview();
   renderParcoursSelect();
+  loadValidations(true);
 }
 async function saveBalises(){ if(currentParcoursId) return sbSet(parcoursKey(currentParcoursId), balises); }
 async function saveClassement(){ if(currentParcoursId) return sbSet(classementKey(currentParcoursId), classement); }
@@ -3098,6 +3106,69 @@ document.getElementById('btn-refresh-rank').addEventListener('click', async ()=>
   renderRankPreview();
 });
 
+// ---------- manual validation requests ----------
+let validations = [], lastPendingKey = '';
+function validationsKey(id){ return 'validations-'+id; }
+function haversineM(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return R*2*Math.atan2(Math.sqrt(a),Math.sqrt(1-a));
+}
+async function loadValidations(force){
+  if(!currentParcoursId) return;
+  const v = await sbGet(validationsKey(currentParcoursId));
+  validations = Array.isArray(v) ? v : [];
+  const key = validations.filter(r=>r.status==='pending').map(r=>r.id).join(',');
+  if(force || key!==lastPendingKey){ lastPendingKey = key; renderValidations(); }
+}
+function renderValidations(){
+  const el = document.getElementById('validations-list');
+  const badge = document.getElementById('validations-badge');
+  const pending = validations.filter(r=>r.status==='pending');
+  badge.textContent = pending.length ? `(${pending.length})` : '';
+  document.title = (pending.length ? `(${pending.length}) ` : '') + 'Organisateur — Balises';
+  if(pending.length===0){ el.className = 'hint'; el.textContent = 'Aucune demande en attente.'; return; }
+  el.className = '';
+  const radius = balises.radius || 30;
+  el.innerHTML = pending.map(r=>{
+    const candidates = balises.list
+      .filter(b=>!b.isStart && !b.isFake && (b.tailles||['petit','moyen','grand']).includes(r.taille) && (b.modes||['velo','rando','course']).includes(r.mode))
+      .map(b=>({b, d: Math.round(haversineM(r.lat, r.lon, b.lat, b.lon))}))
+      .sort((x,y)=>x.d-y.d);
+    const time = new Date(r.requestedAt).toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+    return `<div class="balise-row" style="flex-direction:column; align-items:stretch; gap:8px;">
+      <div><b>${escapeHtml(r.name)}</b> · ${MODE_LABELS[r.mode]} ${TAILLE_LABELS[r.taille]} · ${time} · précision GPS ≈ ${Math.round(r.accuracy)} m</div>
+      <select data-vsel="${r.id}">
+        ${candidates.map(c=>`<option value="${c.b.id}" ${c.b.id===r.candidateId?'selected':''}>${escapeHtml(c.b.name)} — à ${c.d} m${c.d>radius?' (trop loin)':''}</option>`).join('')}
+      </select>
+      <div class="row2">
+        <button class="btn btn-secondary" data-vok="${r.id}">Valider</button>
+        <button class="btn btn-danger-outline" data-vno="${r.id}">Refuser</button>
+      </div>
+    </div>`;
+  }).join('');
+  el.querySelectorAll('[data-vok]').forEach(btn=> btn.addEventListener('click', ()=> resolveValidation(btn.dataset.vok, 'approved')));
+  el.querySelectorAll('[data-vno]').forEach(btn=> btn.addEventListener('click', ()=> resolveValidation(btn.dataset.vno, 'rejected')));
+}
+async function resolveValidation(id, status){
+  const fresh = await sbGet(validationsKey(currentParcoursId));
+  const list = Array.isArray(fresh) ? fresh : [];
+  const req = list.find(r=>r.id===id);
+  if(!req) return;
+  if(status==='approved'){
+    const sel = document.querySelector(`[data-vsel="${id}"]`);
+    req.baliseId = sel ? sel.value : req.candidateId;
+  }
+  req.status = status;
+  req.resolvedAt = Date.now();
+  await sbSet(validationsKey(currentParcoursId), list);
+  validations = list;
+  lastPendingKey = '';
+  renderValidations();
+}
+document.getElementById('btn-refresh-validations').addEventListener('click', ()=> loadValidations(true));
+
 function renderRankPreview(){
   const el = document.getElementById('rank-preview');
   if(classement.length===0){ el.textContent = 'Aucun temps enregistré pour le moment.'; return; }
@@ -3127,7 +3198,7 @@ async function bootMain(){
   const last = localStorage.getItem('last-parcours');
   if(last && parcoursIndex.find(p=>p.id===last)){ await selectParcours(last); }
   else if(parcoursIndex.length>0){ await selectParcours(parcoursIndex[0].id); }
-  setInterval(async ()=>{ if(currentParcoursId){ const c = await sbGet(classementKey(currentParcoursId)); if(c){ classement = c; renderRankPreview(); } } }, 15000);
+  setInterval(async ()=>{ if(currentParcoursId){ const c = await sbGet(classementKey(currentParcoursId)); if(c){ classement = c; renderRankPreview(); } await loadValidations(false); } }, 15000);
 }
 
 (async function init(){
