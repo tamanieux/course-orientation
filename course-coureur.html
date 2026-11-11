@@ -265,7 +265,11 @@ function classementKey(id){ return 'classement-'+id; }
 function validationsKey(id){ return 'validations-'+id; }
 let lockedParcours = null; // parcours privé ouvert via son lien : seul visible
 async function loadParcoursIndex(){
-  if(lockedParcours){ parcoursIndex = [lockedParcours]; return; }
+  if(lockedParcours){
+    const d = await sbGet(parcoursKey(lockedParcours.id));
+    if(d){ lockedParcours.name = d.name || lockedParcours.name; lockedParcours.roster = Array.isArray(d.roster) ? d.roster : []; }
+    parcoursIndex = [lockedParcours]; return;
+  }
   const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : [];
 }
 // Un parcours privé n'est pas dans la liste publique : on ne l'ouvre que si le lien (?pc=...) est fourni
@@ -274,7 +278,7 @@ async function applyPrivateLink(){
   if(!pc || parcoursIndex.some(p=>p.id===pc)) return;
   const data = await sbGet(parcoursKey(pc));
   if(data && data.private){
-    lockedParcours = { id: pc, name: data.name || 'Parcours privé' };
+    lockedParcours = { id: pc, name: data.name || 'Parcours privé', roster: Array.isArray(data.roster) ? data.roster : [] };
     parcoursIndex = [lockedParcours];
     selectedParcoursForSetup = pc;
   }
@@ -448,6 +452,7 @@ function renderPlayScreen(){
     if(!readiness){ loadReadiness(selectedParcoursForSetup).then(()=>renderPlayScreen()); }
     const modeReady = m => !readiness || readiness.modes.has(m);
     const tailleReady = t => !readiness || readiness.tailles.has(t);
+    const lockedRoster = (lockedParcours && lockedParcours.id===selectedParcoursForSetup) ? (lockedParcours.roster||[]) : [];
     el.innerHTML = `
       <div class="card">
         <div class="field">
@@ -466,12 +471,14 @@ function renderPlayScreen(){
             ${TAILLES.map(t=>`<div class="mode-btn ${selectedTaille===t.id?'selected':''} ${tailleReady(t.id)?'':'not-ready'}" data-taille="${t.id}"><span class="ic">${t.icon}</span><span class="lbl">${t.label}</span></div>`).join('')}
           </div>
         </div>
-        <div class="field"><label>Votre nom</label><input type="text" id="player-name" placeholder="Votre prénom" value="${escapeHtml(playerNameDraft)}"></div>
+        ${lockedRoster.length
+          ? `<div class="field"><label>Votre prénom</label><select id="player-name"><option value="">— Choisissez votre prénom —</option>${lockedRoster.map(n=>`<option value="${escapeHtml(n)}" ${n===playerNameDraft?'selected':''}>${escapeHtml(n)}</option>`).join('')}</select></div>`
+          : `<div class="field"><label>Votre nom</label><input type="text" id="player-name" placeholder="Votre prénom" value="${escapeHtml(playerNameDraft)}"></div>`}
         ${playMsg ? `<div class="msg msg-error">${playMsg}</div>` : ''}
         <button class="btn btn-primary" id="btn-begin">Commencer</button>
       </div>`;
     document.getElementById('setup-parcours').addEventListener('change', e=>{ selectedParcoursForSetup = e.target.value; renderPlayScreen(); });
-    document.getElementById('player-name').addEventListener('input', e=> playerNameDraft = e.target.value );
+    ['input','change'].forEach(ev=> document.getElementById('player-name').addEventListener(ev, e=> playerNameDraft = e.target.value ));
     el.querySelectorAll('#mode-grid .mode-btn:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedMode=b.dataset.mode; renderPlayScreen(); }) );
     el.querySelectorAll('#taille-grid .mode-btn:not(.not-ready)').forEach(b=> b.addEventListener('click', ()=>{ selectedTaille=b.dataset.taille; renderPlayScreen(); }) );
     document.getElementById('btn-begin').addEventListener('click', async ()=>{
