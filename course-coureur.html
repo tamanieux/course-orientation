@@ -267,7 +267,7 @@ let lockedParcours = null; // parcours privé ouvert via son lien : seul visible
 async function loadParcoursIndex(){
   if(lockedParcours){
     const d = await sbGet(parcoursKey(lockedParcours.id));
-    if(d){ lockedParcours.name = d.name || lockedParcours.name; lockedParcours.roster = Array.isArray(d.roster) ? d.roster : []; }
+    if(d){ lockedParcours.name = d.name || lockedParcours.name; lockedParcours.roster = Array.isArray(d.roster) ? d.roster : []; lockedParcours.allowValidation = d.allowValidation === true; }
     parcoursIndex = [lockedParcours]; return;
   }
   const idx = await sbGet('parcours-index'); parcoursIndex = Array.isArray(idx) ? idx : [];
@@ -278,7 +278,7 @@ async function applyPrivateLink(){
   if(!pc || parcoursIndex.some(p=>p.id===pc)) return;
   const data = await sbGet(parcoursKey(pc));
   if(data && data.private){
-    lockedParcours = { id: pc, name: data.name || 'Parcours privé', roster: Array.isArray(data.roster) ? data.roster : [] };
+    lockedParcours = { id: pc, name: data.name || 'Parcours privé', roster: Array.isArray(data.roster) ? data.roster : [], allowValidation: data.allowValidation === true };
     parcoursIndex = [lockedParcours];
     selectedParcoursForSetup = pc;
   }
@@ -418,6 +418,11 @@ async function loadReadiness(id){
   const res = { modes, tailles, hasStart: list.some(b=>b.isStart) };
   setupReadinessCache[id] = res;
   return res;
+}
+
+// Parcours privé : pas de demande de validation « QR abîmé » sauf si l'organisateur l'autorise (la balise non scannée compte alors comme faute)
+function manualValidationAllowed(){
+  return !(activeRun && lockedParcours && lockedParcours.id===activeRun.parcoursId && lockedParcours.allowValidation!==true);
 }
 
 function renderPlayScreen(){
@@ -613,8 +618,8 @@ function renderPlayScreen(){
       <button class="btn btn-primary" id="btn-scan-any">📡 Scanner une balise</button>
       <div style="height:8px;"></div>
       <button class="btn btn-outline" id="btn-goto-map">🗺️ Voir la carte</button>
-      <div style="height:8px;"></div>
-      <button class="btn btn-ghost" id="btn-manual-validation">⚠️ QR abîmé ? Demander une validation à l'organisateur</button>
+      ${manualValidationAllowed() ? `<div style="height:8px;"></div>
+      <button class="btn btn-ghost" id="btn-manual-validation">⚠️ QR abîmé ? Demander une validation à l'organisateur</button>` : ''}
       <div style="height:8px;"></div>
       <p style="font-size:11.5px; color:var(--forest-light); text-align:center; margin:0 0 4px;" id="finish-now-hint">Distance jusqu'au Départ : — m (nécessaire pour "Terminer maintenant")</p>
       <button class="btn btn-outline" id="btn-finish-now" disabled onclick="window.finishNow()">🏁 Terminer maintenant</button>
@@ -623,7 +628,8 @@ function renderPlayScreen(){
     </div>`;
   document.getElementById('btn-scan-any').addEventListener('click', ()=> openScanner(handleScan, 'Scanner une balise'));
   document.getElementById('btn-goto-map').addEventListener('click', ()=> switchTab('map'));
-  document.getElementById('btn-manual-validation').addEventListener('click', requestManualValidation);
+  const mvBtn = document.getElementById('btn-manual-validation');
+  if(mvBtn) mvBtn.addEventListener('click', requestManualValidation);
   const photoBtn = document.getElementById('btn-take-photo');
   if(photoBtn) photoBtn.addEventListener('click', ()=> document.getElementById('rando-photo-input').click());
   watchProximityTo(start, balises.startRadius, balises.startAccuracy, 'btn-finish-now', 'finish-now-hint');

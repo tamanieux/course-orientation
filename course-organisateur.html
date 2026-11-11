@@ -132,6 +132,9 @@
             <button class="btn btn-secondary" id="btn-private-qr">⬇️ PDF du QR code</button>
           </div>
         </div>
+        <div id="private-options" style="display:none; margin-top:12px;">
+          <div class="chk"><input type="checkbox" id="chk-allow-validation"><label for="chk-allow-validation">Autoriser le bouton « QR abîmé ? Demander une validation » pour ce parcours privé (décoché : une balise abîmée ou introuvable compte simplement comme faute)</label></div>
+        </div>
         <div id="roster-box" style="display:none; margin-top:14px;">
           <div class="field"><label>Liste des prénoms des élèves (un par ligne)</label><textarea id="roster-input" rows="8" placeholder="Léa&#10;Hugo&#10;Camille"></textarea></div>
           <p class="hint">Avec une liste, les élèves choisissent leur prénom dans un menu et ne peuvent plus écrire un faux nom (uniquement pour ce parcours privé). Liste vide = saisie libre. Pour deux élèves au même prénom, ajoutez par exemple l'initiale du nom : « Léa M. », « Léa D. ».</p>
@@ -3292,6 +3295,8 @@ function renderPrivacyCard(){
   chk.checked = !!(entry && entry.private);
   document.getElementById('private-link-box').style.display = chk.checked ? 'block' : 'none';
   document.getElementById('roster-box').style.display = chk.checked ? 'block' : 'none';
+  document.getElementById('private-options').style.display = chk.checked ? 'block' : 'none';
+  document.getElementById('chk-allow-validation').checked = balises.allowValidation === true;
   if(chk.checked){
     const baseEl = document.getElementById('private-base');
     if(!baseEl.value.trim()) baseEl.value = document.getElementById('app-url').value.trim() || localStorage.getItem('app-url') || guessRunnerUrl();
@@ -3344,6 +3349,14 @@ document.getElementById('chk-private').addEventListener('change', async e=>{
   }
   renderParcoursSelect();
   renderPrivacyCard();
+});
+document.getElementById('chk-allow-validation').addEventListener('change', async e=>{
+  const msg = document.getElementById('private-msg');
+  balises.allowValidation = e.target.checked;
+  const ok = await saveBalises();
+  msg.innerHTML = ok
+    ? `<div class="msg msg-success">${e.target.checked ? 'Les élèves pourront demander une validation si un QR est abîmé.' : 'Plus de demande de validation : une balise abîmée compte comme faute.'}</div>`
+    : '<div class="msg msg-error">Échec de l\u2019enregistrement (connexion ?). Réessayez.</div>';
 });
 document.getElementById('btn-copy-private-link').addEventListener('click', async ()=>{
   const input = document.getElementById('private-link');
